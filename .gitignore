@@ -24,3 +24,11 @@ desktop/scripts/.wtc-profile/
 # OS
 Thumbs.db
 Desktop.ini
+
+# Electron test profiles
+desktop/scripts/.dbg-profile/
+desktop/scripts/.dbg2-profile/
+desktop/scripts/.z50-profile/
+desktop/scripts/debug-screenshot.png
+desktop/scripts/*.txt
+desktop/scripts/*.err

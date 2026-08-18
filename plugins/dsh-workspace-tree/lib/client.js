@@ -29,6 +29,9 @@ window.__ModuleLoader__.load({
 			style.dataset.pluginCss = STYLE_ID;
 			// Same palette as the old desktop sidebar (maid-atelier, permanent).
 			style.textContent = `
+/* Raise the overlay layer above the session header so the workspace panel
+   header (🐋 工作区 buttons) is never covered by it. */
+[data-shell-overlay] { z-index: 50 !important; }
 .wt-tab {
   position: fixed; right: 0; top: 50%; transform: translateY(-50%);
   z-index: 9999; writing-mode: vertical-rl;
