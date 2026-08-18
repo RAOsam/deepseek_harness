@@ -40,13 +40,12 @@
 
 在会话 header 提供备份/回退/恢复三个按钮，通过 3090 HTTP 桥与桌面应用通信，支持会话安全回滚。
 
-#### [dsh-skin-switch](plugins/dsh-skin-switch/) — 皮肤切换
+#### [dsh-skin-switch](plugins/dsh-skin-switch/) — 皮肤切换 + 内置皮肤
 
-EAC 皮肤切换器，支持从 `@dsh-external` 包加载自定义皮肤。
+设置页「皮肤」tab，列出并切换内置皮肤。支持从 `@dsh-external` / `@linxin666` 包加载外部皮肤，也可将皮肤内置到 `skins/` 目录。
 
-#### [dsh-deep-whale/maid-atelier](plugins/dsh-deep-whale/maid-atelier/) — 深海女仆皮肤
-
-深海军蓝主题皮肤，永久启用。暗色背景 + 金色强调色。
+**内置皮肤：**
+- 🎨 **maid-atelier**（深海女仆工坊）— 深海军蓝主题，暗色背景 + 金色强调色 + 宫殿背景图 + Q 版侧栏装饰
 
 ---
 
@@ -104,8 +103,9 @@ deepseek_harness/
 │   ├── deepseek-balance/       # 余额监控插件
 │   ├── dsh-workspace-tree/     # 工作区文件树插件
 │   ├── dsh-session-tools/      # 会话备份/回退/恢复
-│   ├── dsh-skin-switch/        # 皮肤切换器
-│   └── dsh-deep-whale/         # 深海女仆皮肤
+│   └── dsh-skin-switch/        # 皮肤切换器 + 内置 maid-atelier 皮肤
+│       ├── lib/                # 服务端 + 设置页客户端
+│       └── skins/maid-atelier/ # 内置深海女仆皮肤
 └── README.md
 ```
 
