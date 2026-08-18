@@ -1,0 +1,9 @@
+# deepseek-balance bundle patch — one dual-face row:
+#   - the host half provides /dsb/api/* routes (balance proxy + stats + top-up redirect);
+#   - the client half (exports["./client"]) scans into window.__DSH_BOOT__ and renders the
+#     sidebar-footer widget via the `sidebar.footer.action` slot.
+# To disable the plugin: set `disabled: true` on this row (or remove the bundle from
+# dsh.profile.bundles in the profile's package.json).
+- insert:
+    - id: deepseek-balance
+      name: deepseek-balance

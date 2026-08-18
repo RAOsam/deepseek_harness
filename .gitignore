@@ -1,0 +1,26 @@
+# Node
+node_modules/
+.npm-cache/
+.electron-cache/
+
+# DSH profile (runtime data, don't track)
+.dsh/
+
+# Build output
+desktop/release/
+desktop/scripts/.wt-profile/
+desktop/scripts/.probe*/?/
+desktop/scripts/.min-profile/
+desktop/scripts/.wt2-profile/
+desktop/scripts/.wtd-profile/
+desktop/scripts/.wtb-profile/
+desktop/scripts/.wts-profile/
+desktop/scripts/.wtc-profile/
+
+# Temp
+.tmp-eac-repo/
+*.zstd
+
+# OS
+Thumbs.db
+Desktop.ini
