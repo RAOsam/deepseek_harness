@@ -29,11 +29,6 @@ window.__ModuleLoader__.load({
 			style.dataset.pluginCss = STYLE_ID;
 			// Same palette as the old desktop sidebar (maid-atelier, permanent).
 			style.textContent = `
-/* Raise the whole frame overlay layer above the session header (z-index 21)
-   so the workspace tab/panel can never be covered by it. The panel docks
-   (pushes the shell via #root margin-right), so nothing overlaps it anyway;
-   this is belt-and-suspenders against any other high-stacking element. */
-[data-shell-overlay] { z-index: 100 !important; }
 .wt-tab {
   position: fixed; right: 0; top: 50%; transform: translateY(-50%);
   z-index: 9999; writing-mode: vertical-rl;

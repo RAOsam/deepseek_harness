@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, normalize, sep } from "node:path";
+import { join, normalize, sep, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Remote, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 
 /**
@@ -93,25 +94,37 @@ function readJson(path) {
 }
 
 /**
- * Scan the profile's node_modules for skin packages: web client packages
- * that ship a skin.json manifest (the desktop shell copies these in from
- * assets/skins). The row id is the skin.json wiring.id (ui-skin-*).
+ * Built-in skins shipped inside this plugin's own `skins/` directory.
+ * These are always available regardless of what's in the profile's node_modules.
  */
-function installedSkins() {
-	const dir = profileDir();
+function builtInSkinsDir() {
+	try {
+		// ESM: __dirname equivalent
+		const selfDir = typeof __dirname !== "undefined"
+			? __dirname
+			: dirname(fileURLToPath(import.meta.url));
+		return join(selfDir, "..", "skins");
+	} catch {
+		return "";
+	}
+}
+
+/**
+ * Scan one directory for skin packages (packages that ship skin.json).
+ * Returns an array of skin descriptors.
+ */
+function scanSkinsDir(baseDir) {
 	const skins = [];
-	for (const scope of SKIN_SCOPES) {
-		const scopeDir = join(skinsRoot(), ...scope.split("/"));
-		if (!existsSync(scopeDir)) continue;
-		for (const entry of readdirSync(scopeDir, { withFileTypes: true })) {
-			if (!entry.isDirectory()) continue;
-			const pkgDir = join(scopeDir, entry.name);
-			const pkgPath = join(pkgDir, "package.json");
-			const skinPath = join(pkgDir, "skin.json");
-			if (!existsSync(pkgPath) || !existsSync(skinPath)) continue;
-			try {
-				const pkg = readJson(pkgPath);
-				if (pkg.dsh?.client?.platform !== "web") continue;
+	if (!existsSync(baseDir)) return skins;
+	for (const entry of readdirSync(baseDir, { withFileTypes: true })) {
+		if (!entry.isDirectory()) continue;
+		const pkgDir = join(baseDir, entry.name);
+		const pkgPath = join(pkgDir, "package.json");
+		const skinPath = join(pkgDir, "skin.json");
+		if (!existsSync(pkgPath) || !existsSync(skinPath)) continue;
+		try {
+			const pkg = readJson(pkgPath);
+			if (pkg.dsh?.client?.platform !== "web") continue;
 			const manifest = readJson(skinPath);
 			const rowId = manifest.wiring?.id ?? manifest.id;
 			if (typeof rowId !== "string" || !SKIN_ROW_RE.test(rowId)) continue;
@@ -127,16 +140,40 @@ function installedSkins() {
 				accent: typeof manifest.accent === "string" ? manifest.accent : "",
 				author: typeof manifest.author === "string" ? manifest.author : "",
 				order: Number.isFinite(manifest.order) ? manifest.order : 99,
+				builtIn: baseDir !== join(skinsRoot(), ...SKIN_SCOPES[0].split("/")),
 				preview: {
 					light: PREVIEW_ROUTE + "/" + rowId + "/light",
 					dark: PREVIEW_ROUTE + "/" + rowId + "/dark"
 				}
 			});
-			} catch {}
-		}
+		} catch {}
 	}
-	skins.sort((a, b) => a.order - b.order);
 	return skins;
+}
+
+/**
+ * Scan the profile's node_modules and the plugin's built-in skins directory
+ * for skin packages that ship a skin.json manifest.
+ */
+function installedSkins() {
+	const skins = [];
+	// 1) Profile node_modules (external skins installed by the desktop shell)
+	for (const scope of SKIN_SCOPES) {
+		skins.push(...scanSkinsDir(join(skinsRoot(), ...scope.split("/"))));
+	}
+	// 2) Built-in skins shipped inside this plugin's own skins/ directory
+	const builtInDir = builtInSkinsDir();
+	if (builtInDir) skins.push(...scanSkinsDir(builtInDir));
+	// Deduplicate by row id (built-in wins over external)
+	const seen = new Set();
+	const unique = [];
+	for (const skin of skins) {
+		if (seen.has(skin.id)) continue;
+		seen.add(skin.id);
+		unique.push(skin);
+	}
+	unique.sort((a, b) => a.order - b.order);
+	return unique;
 }
 
 /** Read the patch text; empty file and missing file both mean "no patch yet". */
@@ -229,11 +266,18 @@ function previewFile(id, theme) {
 	if (!SKIN_ROW_RE.test(String(id ?? "")) || !PREVIEW_THEMES.includes(theme)) return null;
 	const skin = installedSkins().find((entry) => entry.id === id);
 	if (!skin) return null;
-	const pkgRoot = normalize(join(skinsRoot(), ...skin.packageName.split("/")));
-	for (const ext of PREVIEW_EXTS) {
-		const file = normalize(join(pkgRoot, "preview", theme + ext));
-		if (!file.startsWith(pkgRoot + sep)) continue;
-		if (existsSync(file) && statSync(file).isFile()) return file;
+	// Search in profile node_modules first, then built-in skins directory
+	const searchRoots = [
+		normalize(join(skinsRoot(), ...skin.packageName.split("/"))),
+	];
+	const builtInDir = builtInSkinsDir();
+	if (builtInDir) searchRoots.push(normalize(join(builtInDir, skin.skinId)));
+	for (const pkgRoot of searchRoots) {
+		for (const ext of PREVIEW_EXTS) {
+			const file = normalize(join(pkgRoot, "preview", theme + ext));
+			if (!file.startsWith(pkgRoot + sep)) continue;
+			if (existsSync(file) && statSync(file).isFile()) return file;
+		}
 	}
 	return null;
 }
