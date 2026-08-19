@@ -83,6 +83,233 @@ function log(msg) {
   } catch { /* logging must never crash the app */ }
 }
 
+// ------------------------------------------------------------ crash report ----
+// Real-time stderr parser: extracts the failing plugin name from DSH error
+// output and writes crash-report.json. The watchdog reads this file to
+// identify which plugin to disable — no log parsing needed.
+
+function crashReportPath() {
+  return path.join(app.getPath('userData'), 'crash-report.json');
+}
+
+function disabledOverlayPath() {
+  return path.join(app.getPath('userData'), 'disabled-by-watchdog.yml');
+}
+
+// Parse a single stderr line for a plugin name involved in a loader failure.
+function parsePluginFromLine(line) {
+  // Pattern 1: "failed to apply loader entry <name>"
+  const m1 = line.match(/failed to apply loader entry\s+(\S+)/);
+  if (m1) return m1[1];
+  // Pattern 2: "Cannot find package ... imported from .../<plugin>/lib/index.js"
+  const m2 = line.match(/imported from\s+[^\s]*node_modules[/\\](@[^/\\]+[/\\][^/\\]+|[^/\\]+)[/\\]/);
+  if (m2) return m2[1].replace(/\\/g, '/');
+  // Pattern 3: "failed to load: ... <plugin-name>"
+  const m3 = line.match(/plugin tree failed to load.*?(\S+plugin\S+)/i);
+  if (m3) return m3[1];
+  return null;
+}
+
+// Append a crash report to disk (last-write wins for the same plugin).
+function writeCrashReport(plugin, errorLine) {
+  try {
+    const report = { plugin, error: errorLine.slice(0, 300), timestamp: Date.now() };
+    fs.writeFileSync(crashReportPath(), JSON.stringify(report, null, 2), 'utf8');
+    log(`crash-report written: plugin=${plugin}`);
+  } catch { /* never crash the app for logging */ }
+}
+
+// Read the latest crash report (returns null if absent or stale > 60s).
+function readCrashReport() {
+  try {
+    const raw = fs.readFileSync(crashReportPath(), 'utf8');
+    const report = JSON.parse(raw);
+    if (report.timestamp && Date.now() - report.timestamp < 60_000) return report;
+  } catch { /* ignore */ }
+  return null;
+}
+
+// Clear the crash report (after successful recovery).
+function clearCrashReport() {
+  try { fs.unlinkSync(crashReportPath()); } catch { /* ignore */ }
+}
+
+// Add a plugin to the disabled overlay (does NOT touch cordis.patch.yml).
+function disablePluginInOverlay(pluginName, reason) {
+  const file = disabledOverlayPath();
+  const ts = new Date().toISOString();
+  try {
+    // Read existing entries to avoid duplicates
+    const existing = fs.readFileSync(file, 'utf8');
+    if (existing.includes(`id: ${pluginName}`)) return; // already disabled
+    const append = `\n- id: ${pluginName}\n  disabled: true\n  # disabled-by-watchdog: ${reason}\n  # disabled-at: ${ts}\n`;
+    fs.writeFileSync(file, existing + append, 'utf8');
+  } catch {
+    // File doesn't exist yet
+    const header = '# Disabled by watchdog — auto-generated, safe to delete.\n# To re-enable a plugin, remove its entry and restart.\n';
+    const content = header + `\n- id: ${pluginName}\n  disabled: true\n  # disabled-by-watchdog: ${reason}\n  # disabled-at: ${ts}\n`;
+    fs.writeFileSync(file, content, 'utf8');
+  }
+  log(`watchdog disabled plugin: ${pluginName} (${reason})`);
+}
+
+// Read the disabled overlay file path for --patch flag.
+function getPatchArgs() {
+  const file = disabledOverlayPath();
+  try {
+    if (fs.existsSync(file) && fs.statSync(file).size > 10) {
+      return ['--patch', file];
+    }
+  } catch { /* ignore */ }
+  return [];
+}
+
+// --------------------------------------------- watchdog ----
+const WATCHDOG = {
+  COOLDOWN_MS: 30_000,       // startup grace: only check process alive
+  INTERVAL_MS: 10_000,       // health check interval
+  MAX_FAILURES: 3,           // consecutive failures before safe mode
+  SAFE_MODE_PLUGINS: [       // plugins to KEEP in safe mode (all others disabled)
+    'pwsh-sandbox',
+    '@deepseek-ai/dsh-skin-switch',
+    '@dsh-external/dsh-client-ui-skin-maid-atelier',
+    'dsh-session-tools',
+  ],
+};
+
+let watchdogTimer = null;
+let watchdogState = 'idle';  // idle | cooldown | healthy | recovering | safe-mode
+let consecutiveFailures = 0;
+let serviceStartTime = 0;
+
+function startWatchdog() {
+  if (watchdogTimer) clearInterval(watchdogTimer);
+  watchdogTimer = setInterval(async () => {
+    // Only monitor services we spawned
+    if (!server.startedByUs || !server.child) {
+      watchdogState = 'idle';
+      return;
+    }
+    if (server.status !== 'running' && server.status !== 'starting') return;
+
+    const uptime = Date.now() - serviceStartTime;
+
+    // Phase 1: cooldown — only check if process is alive
+    if (uptime < WATCHDOG.COOLDOWN_MS) {
+      watchdogState = 'cooldown';
+      if (server.child.exitCode !== null) {
+        log('watchdog: process died during cooldown');
+        watchdogState = 'recovering';
+        handleCrash();
+      }
+      return;
+    }
+
+    // Phase 2: health check via HTTP
+    watchdogState = 'healthy';
+    const alive = await httpProbeReady(settings.host, settings.port, 3000);
+    if (!alive) {
+      consecutiveFailures++;
+      log(`watchdog: health check failed (${consecutiveFailures}/${WATCHDOG.MAX_FAILURES})`);
+      if (consecutiveFailures >= WATCHDOG.MAX_FAILURES) {
+        watchdogState = 'safe-mode';
+        handleSafeMode();
+      } else {
+        watchdogState = 'recovering';
+        handleCrash();
+      }
+    } else {
+      if (consecutiveFailures > 0) log('watchdog: service recovered');
+      consecutiveFailures = 0;
+      watchdogState = 'healthy';
+    }
+  }, WATCHDOG.INTERVAL_MS);
+}
+
+function stopWatchdog() {
+  if (watchdogTimer) { clearInterval(watchdogTimer); watchdogTimer = null; }
+  watchdogState = 'idle';
+}
+
+async function handleCrash() {
+  const report = readCrashReport();
+  if (report && report.plugin) {
+    log(`watchdog: crash-report identifies plugin "${report.plugin}"`);
+    disablePluginInOverlay(report.plugin, report.error);
+  } else {
+    log('watchdog: no specific plugin identified, restarting without disabling');
+  }
+  clearCrashReport();
+  consecutiveFailures++;
+  await restartServer();
+}
+
+async function handleSafeMode() {
+  log('watchdog: entering safe mode — disabling all custom plugins');
+  // Disable every plugin not in the safe-mode keep list
+  try {
+    const patchFile = path.join(app.getPath('home'), '.dsh', 'profiles', 'web', 'cordis.patch.yml');
+    const text = fs.readFileSync(patchFile, 'utf8');
+    const nameMatches = [...text.matchAll(/name:\s*['"]?([^'"\s,\]]+)/g)];
+    for (const m of nameMatches) {
+      const name = m[1];
+      if (!WATCHDOG.SAFE_MODE_PLUGINS.includes(name)) {
+        disablePluginInOverlay(name, 'safe mode');
+      }
+    }
+  } catch (err) {
+    log('watchdog: failed to parse patch for safe mode: ' + err.message);
+  }
+  clearCrashReport();
+  consecutiveFailures = 0;
+  await restartServer();
+}
+
+// Pre-flight validation: check that every insert-row plugin exists and has a
+// valid package.json. Returns an array of error strings (empty = OK).
+function preflightCheck() {
+  const errors = [];
+  const home = app.getPath('home');
+  const patchFile = path.join(home, '.dsh', 'profiles', 'web', 'cordis.patch.yml');
+  const nmDirs = [
+    path.join(home, '.dsh', 'profiles', 'node_modules'),
+    path.join(home, '.dsh', 'profiles', 'web', 'node_modules'),
+  ];
+  try {
+    const text = fs.readFileSync(patchFile, 'utf8');
+    // Extract plugin names from insert rows (name: 'xxx' or name: "xxx")
+    const nameMatches = [...text.matchAll(/name:\s*['"]([^'"]+)['"]/g)];
+    for (const m of nameMatches) {
+      const name = m[1];
+      let found = false;
+      for (const nm of nmDirs) {
+        const pkgPath = path.join(nm, name, 'package.json');
+        if (fs.existsSync(pkgPath)) {
+          found = true;
+          try {
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+            if (!pkg.type || pkg.type !== 'module') {
+              errors.push(`${name}: 缺少 "type":"module"（DSH 要求 ES 模块）`);
+            }
+            if (!pkg.exports) {
+              errors.push(`${name}: 缺少 exports 配置`);
+            }
+          } catch (e) {
+            errors.push(`${name}: package.json 解析失败: ${e.message}`);
+          }
+          break;
+        }
+      }
+      if (!found) {
+        errors.push(`${name}: 在 node_modules 中找不到`);
+      }
+    }
+  } catch (err) {
+    errors.push(`读取 cordis.patch.yml 失败: ${err.message}`);
+  }
+  return errors;
+}
+
 // ------------------------------------------------------------------- probing ----
 function tcpProbe(host, port, timeoutMs = 1200) {
   return new Promise((resolve) => {
@@ -270,7 +497,10 @@ async function startServer() {
     setServerStatus('error', '未找到 DSH CLI（@deepseek-ai/dsh/lib/bin.js）。首次启动会自动下载，请检查网络后点「重试」；也可以在设置中指定 dshCliPath');
     return;
   }
-  log(`spawning: ${node} ${cli} --profile web --host ${settings.host} --port ${settings.port}`);
+  const spawnArgs = [cli, '--profile', 'web', '--host', settings.host, '--port', String(settings.port)];
+  // Add --patch overlay for watchdog-disabled plugins (never touches patch.yml)
+  spawnArgs.push(...getPatchArgs());
+  log(`spawning: ${node} ${spawnArgs.join(' ')}`);
   // Release any leftover listener on the port first — accumulated zombie dsh
   // processes from earlier sessions otherwise crash the fresh spawn with
   // EADDRINUSE (the recurring "dsh exited code=1" startup error).
@@ -278,7 +508,7 @@ async function startServer() {
   await new Promise((r) => setTimeout(r, 300));
   // detached: the DSH service runs in its own process group, so restarting the
   // desktop app no longer takes the service (and the hosted session) down with it.
-  const child = spawn(node, [cli, '--profile', 'web', '--host', settings.host, '--port', String(settings.port)], {
+  const child = spawn(node, spawnArgs, {
     cwd: path.dirname(cli),
     env: {
       ...process.env,
@@ -293,12 +523,20 @@ async function startServer() {
   child.unref(); // the app does not keep the service alive nor wait for it
   server.child = child;
   server.startedByUs = true;
+  serviceStartTime = Date.now(); // watchdog cooldown baseline
 
   child.stdout.on('data', (buf) => {
     for (const line of buf.toString('utf8').split(/\r?\n/)) if (line.trim()) { log('[dsh] ' + line); tail(server.stdoutTail, line); }
   });
   child.stderr.on('data', (buf) => {
-    for (const line of buf.toString('utf8').split(/\r?\n/)) if (line.trim()) { log('[dsh:err] ' + line); tail(server.stderrTail, line); }
+    for (const line of buf.toString('utf8').split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      log('[dsh:err] ' + line);
+      tail(server.stderrTail, line);
+      // Real-time crash reporter: extract failing plugin name
+      const plugin = parsePluginFromLine(line);
+      if (plugin) writeCrashReport(plugin, line);
+    }
   });
   child.once('error', (err) => {
     log('failed to spawn dsh: ' + err.message);
@@ -378,8 +616,20 @@ function releasePort(port) {
 }
 
 async function restartServer() {
+  // Pre-flight validation: catch config errors before they crash the service
+  const errors = preflightCheck();
+  if (errors.length > 0) {
+    const msg = '预检失败，未重启：\n' + errors.join('\n');
+    log('preflight failed: ' + errors.join('; '));
+    setServerStatus('error', msg);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('dsh:server-status', { status: 'error', detail: msg });
+    }
+    return;
+  }
   log('restart requested');
   backupSession('pre-restart'); // safety net: snapshot the conversation first
+  clearCrashReport(); // fresh start
   await stopServer();
   await releasePort(settings.port);
   await new Promise((r) => setTimeout(r, 600));
@@ -413,11 +663,12 @@ function loadingHtml() {
   .dot { width:22px; height:22px; border-radius:50%; background:#4d6bfe; animation:pulse 1.2s infinite; }
   @keyframes pulse { 0%,100%{opacity:.35; transform:scale(.9)} 50%{opacity:1; transform:scale(1.15)} }
   h1 { font-size:16px; font-weight:600; margin:0; }
-  p  { font-size:13px; margin:0; color:#cfd3d6; text-align:center; max-width:520px; line-height:1.6; }
+  p  { font-size:13px; margin:0; color:#cfd3d6; text-align:center; max-width:520px; line-height:1.6; white-space:pre-wrap; }
   button { margin-top:6px; padding:8px 22px; border:1px solid #4d6bfe; border-radius:6px; background:transparent;
            color:#8fa3ff; font-size:13px; cursor:pointer; }
   button:hover { background:#1c2547; }
   .err { color:#ff7b72; }
+  .warn { color:#e8c88a; }
 </style></head>
 <body>
   <div class="dot" id="dot"></div>
@@ -432,11 +683,21 @@ function loadingHtml() {
       const retry = document.getElementById('retry');
       if (s.status === 'running') {
         title.textContent = '服务已就绪，正在打开…';
+        title.className = '';
         dot.style.display = 'none';
       } else if (s.status === 'error' || s.status === 'stopped') {
-        title.textContent = s.status === 'error' ? '服务启动失败' : '服务未运行';
-        title.className = 'err';
-        detail.textContent = s.detail || '';
+        const d = s.detail || '';
+        if (d.includes('已自动禁用')) {
+          title.textContent = '⚠ 插件导致崩溃，已自动禁用';
+          title.className = 'warn';
+        } else if (d.includes('安全模式')) {
+          title.textContent = '🛡 安全模式';
+          title.className = 'warn';
+        } else {
+          title.textContent = s.status === 'error' ? '服务启动失败' : '服务未运行';
+          title.className = 'err';
+        }
+        detail.textContent = d;
         retry.style.display = 'inline-block';
       } else {
         detail.textContent = s.detail ? '正在 ' + s.detail : '';
@@ -884,6 +1145,7 @@ if (!gotLock) {
     startSkinPolling();
     startSessionBackup();
     startSessionToolsServer();
+    startWatchdog(); // crash recovery + safe mode
     log(`started. userData=${app.getPath('userData')}`);
   });
 
@@ -902,6 +1164,7 @@ async function quitApp() {
   if (isQuitting) return;
   isQuitting = true;
   log('quitting');
+  stopWatchdog();
   if (server.startedByUs && !settings.keepServerOnQuit) {
     await stopServer();
   }

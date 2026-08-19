@@ -1,0 +1,25 @@
+{
+  "name": "dsh-memory",
+  "version": "1.0.0",
+  "description": "DSH 记忆插件：让 AI 记住用户信息、偏好、重要事件，每次对话自动注入相关记忆。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "react": "^18.2.0",
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "license": "MIT"
+}
