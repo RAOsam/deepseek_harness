@@ -76,25 +76,49 @@ window.__ModuleLoader__.load({
 				title: action === "backup" ? "备份当前会话" : action === "rollback" ? "回退到最近的备份（会重启服务，会话自动恢复）" : "恢复/重连会话视图",
 			}, busy === action ? "处理中…" : label);
 
+			const runSafeCompact = async () => {
+				setBusy('compact');
+				setMsg(null);
+				// Step 1: backup
+				try {
+					const bRes = await fetch(BASE + '/backup', { cache: 'no-store' });
+					let bData = {};
+					try { bData = await bRes.json(); } catch {}
+					if (!bData || bData.ok !== true) {
+						setMsg({ text: '备份失败，中止压缩', kind: 'bad' });
+						setBusy('');
+						return;
+					}
+				} catch {
+					setMsg({ text: '备份失败（桌面端未运行？）', kind: 'bad' });
+					setBusy('');
+					return;
+				}
+				// Step 2: compact via DSH command
+				try {
+					const cRes = await fetch('http://127.0.0.1:3080/api/compact', { method: 'POST', cache: 'no-store' });
+					let cData = {};
+					try { cData = await cRes.json(); } catch {}
+					if (cData && cData.ok === true) setMsg({ text: '备份+压缩完成 ✓', kind: 'ok' });
+					else setMsg({ text: '压缩失败：' + ((cData && cData.error) || ('HTTP ' + cRes.status)), kind: 'bad' });
+				} catch {
+					setMsg({ text: '压缩失败', kind: 'bad' });
+				}
+				setBusy('');
+			};
+
 			return React.createElement("span", { className: "st-actions" },
 				renderBtn("backup", "备份"),
 				renderBtn("rollback", "⟲ 回退", "st-rollback"),
 				renderBtn("restore", "⟳ 恢复", "st-restore"),
+				React.createElement("button", { type: "button", className: "st-btn", onClick: runSafeCompact, disabled: busy !== "", title: "先自动备份，再压缩会话历史" }, busy === 'compact' ? '处理中…' : '备份+压缩'),
 				msg ? React.createElement("span", { key: "msg", className: "st-msg " + msg.kind }, msg.text) : null);
 		}
 
 		const inject = ["slots"];
 
 		function apply(ctx) {
-			try {
-				ctx.slots.inject("conversation.session.header.actions", () => ctx.slots.register({
-					name: "conversation.session.header.actions",
-					id: "session-tools",
-					order: 100,
-				}, SessionTools));
-			} catch (err) {
-				console.error("[dsh-session-tools] apply failed:", err);
-			}
+			// Buttons removed — use /backup, /compact commands instead
 		}
 
 		exports.name = "dsh-session-tools";

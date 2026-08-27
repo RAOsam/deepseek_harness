@@ -28,7 +28,7 @@ function defaultPersona() {
 }
 
 function createPersonaManager() {
-  let activeId, personas;
+  let activeId, personas, sessionBindings = {};
 
   function load() {
     const file = personasFile();
@@ -37,6 +37,7 @@ function createPersonaManager() {
         const data = JSON.parse(readFileSync(file, 'utf8'));
         activeId = data.activeId || 'default';
         personas = Array.isArray(data.personas) ? data.personas : [];
+        sessionBindings = data.sessionBindings || {};
         if (personas.length === 0) {
           personas = [defaultPersona()];
           activeId = 'default';
@@ -51,7 +52,7 @@ function createPersonaManager() {
   function save() {
     const file = personasFile();
     mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, JSON.stringify({ activeId, personas }, null, 2), 'utf8');
+    writeFileSync(file, JSON.stringify({ activeId, personas, sessionBindings }, null, 2), 'utf8');
   }
 
   function activeText() {
@@ -69,6 +70,14 @@ function createPersonaManager() {
     activeText,
     load,
     save,
+    bindSession(sid, pid) { sessionBindings[sid] = pid; save(); },
+    unbindSession(sid) { delete sessionBindings[sid]; save(); },
+    getSessionPersona(sid) { return sessionBindings[sid] || null; },
+    switchToSessionPersona(sid) {
+      const bid = sessionBindings[sid];
+      if (bid && personas.find(p => p.id === bid)) { activeId = bid; save(); return true; }
+      return false;
+    },
   };
 }
 
@@ -189,6 +198,36 @@ export function apply(ctx) {
       manager.personas.splice(idx, 1);
       manager.save();
       sendJson(res, 200, { ok: true });
+    });
+
+    // POST /api/personas/bind?sessionId=xxx&id=xxx — bind persona to session
+    register(API + '/bind', (req, res) => {
+      if (req.method === 'OPTIONS') { sendOptions(res); return; }
+      if (req.method !== 'POST') { res.writeHead(405); res.end(); return; }
+      const u = new URL(req.url || '/', 'http://x');
+      const sid = u.searchParams.get('sessionId');
+      const pid = u.searchParams.get('id');
+      if (!sid || !pid) { sendJson(res, 400, { ok: false, error: 'missing sessionId or id' }); return; }
+      manager.bindSession(sid, pid);
+      sendJson(res, 200, { ok: true });
+    });
+
+    // POST /api/personas/switch-session?sessionId=xxx — switch to session's bound persona
+    register(API + '/switch-session', (req, res) => {
+      if (req.method === 'OPTIONS') { sendOptions(res); return; }
+      if (req.method !== 'POST') { res.writeHead(405); res.end(); return; }
+      const sid = new URL(req.url || '/', 'http://x').searchParams.get('sessionId');
+      if (!sid) { sendJson(res, 400, { ok: false, error: 'missing sessionId' }); return; }
+      const switched = manager.switchToSessionPersona(sid);
+      if (switched) { applyPersona(); }
+      sendJson(res, 200, { ok: true, switched, activeId: manager.activeId });
+    });
+
+    // GET /api/personas/bindings — list all session bindings
+    register(API + '/bindings', (req, res) => {
+      if (req.method === 'OPTIONS') { sendOptions(res); return; }
+      if (req.method !== 'GET') { res.writeHead(405); res.end(); return; }
+      sendJson(res, 200, { ok: true, bindings: manager.sessionBindings });
     });
 
     return () => { for (const d of disposers) d(); };

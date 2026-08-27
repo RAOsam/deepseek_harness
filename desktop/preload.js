@@ -45,4 +45,11 @@ contextBridge.exposeInMainWorld('dshDesktop', {
     ipcRenderer.on('dsh:server-status', listener);
     return () => ipcRenderer.removeListener('dsh:server-status', listener);
   },
+
+  // watchdog status pushed from main (plugins disabled / safe mode / health)
+  onWatchdog: (callback) => {
+    const listener = (_event, status) => callback(status);
+    ipcRenderer.on('dsh:watchdog', listener);
+    return () => ipcRenderer.removeListener('dsh:watchdog', listener);
+  },
 });

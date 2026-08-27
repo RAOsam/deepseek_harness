@@ -39,16 +39,30 @@
 - **记忆**：`dsh-memory` 插件，设置页面「记忆」+ AI 工具（`memory_save` / `memory_search`）。
   按重要性注入记忆到系统提示词。5 个分类：偏好/信息/事件/规则/背景。
   注册工具用 `harness.registerTool(ctx, toolDef)`。
-- **防崩溃系统**（watchdog）：main.js 内置三层防护——
+- **防崩溃系统**（watchdog v3）：main.js 内置，模块结构见 `WATCHDOG v3` 区块——
   1. **预检验证**：`restartServer()` 前检查 patch.yml 的每个插件是否存在于 node_modules、
      package.json 有 `type:"module"` + `exports`。失败则阻止重启并显示错误。
-  2. **实时崩溃上报**：DSH 子进程 stderr 流解析，匹配 `failed to apply loader entry`
-     和 `Cannot find package...imported from` 模式，写入 `userData/crash-report.json`。
-  3. **Watchdog**：10 秒间隔健康检查。启动后 30 秒冷静期（只检查进程存活）。
-     连续失败时读 crash-report.json 识别问题插件，写入
-     `userData/disabled-by-watchdog.yml`（`--patch` 覆盖层，不碰 patch.yml）。
-     连续 3 次失败 → 安全模式（禁用所有自定义插件，只保留皮肤+会话工具）。
-  4. **loading 页面状态显示**：插件崩溃/安全模式时在启动页显示黄色警告。
+  2. **实时崩溃上报**：**多行错误块累积**——stderr 按行累积，遇 `Node.js v` 或空行结束块，
+     在完整块内按 **内层优先** 解析真实插件（`failed to import loader entry` 取最深一条 →
+     `Cannot find package...node_modules/<plugin>/` → `failed to apply loader entry` 外层兜底，
+     跳过 `include` / `cordis:*` 包装层），写入 `userData/crash-report.json`。
+  3. **Watchdog 状态机**：idle → cooldown(30s 只查进程) → healthy / crashed → 分级恢复。
+     10 秒健康检查；GUI 页面看门狗 15 秒查白屏/卡死并 reload，互相独立。
+  4. **分级禁用（Level 1→2→3，每级验证后才升级）**：
+     - L1 只禁用 crash-report 定位的那个插件 → 重启 → verifyRecovery（30s 内 HTTP 200 或子进程再死）；
+     - L1 失败 → L2 禁用全部非核心插件（保留 `LEVEL2_KEEP`：pwsh/皮肤/会话工具/人设/记忆）；
+     - L2 失败 → L3 安全模式（保留 `SAFE_MODE_KEEP`，最小集）。L1 够用就不会动 L2。
+     `MAX_FAILURES=3` 是兜底：连败 3 次直接跳安全模式。安全模式是 sticky 状态（托盘/横幅持续显示），
+     只有用户「重新启用所有插件」或删除 overlay 才解除，避免无限重启轰炸。
+  5. **Overlay 自动清理**：`disabled-by-watchdog.yml`（`--patch` 覆盖层，不碰 patch.yml）每条带
+     `disabled-at` 时间戳；成功启动后只清理**超过 24h** 的旧条目（fresh 条目保留，防止刚禁用的
+     插件立刻被重新启用造成崩溃循环）。overlay 为空自动删文件。
+  6. **托盘菜单状态**：watchdog 状态行（正常/崩溃/安全模式 + Level）+ 已禁用插件列表 +
+     「重新启用所有插件」（清 overlay + 重启服务）。
+  7. **IPC 推送**：`notifyWatchdogState` 把状态发到**所有窗口 + dshView**（loading 页与 GUI 都能收到），
+     preload 暴露 `window.dshDesktop.onWatchdog(cb)`，loading 页显示黄色横幅（⚠ 已禁用 / 🛡 安全模式）。
+  8. **恢复验证**：每次禁用后重启并验证（最多 30s 等 HTTP 200），验证通过才算恢复，失败才升下一级。
+     crash-report 2 分钟 TTL，健康后清除。`recovering` 标志防止 10s tick 与恢复链并发重入。
 - **打包**：`desktop/package.json` → `npm run dist`（electron-builder NSIS），
   产物 `release/DeepSeek Harness Desktop-<ver>-setup.exe`。
 - **服务重启**：用户手动通过托盘菜单「重启 DSH 服务」，不要由 agent 杀进程重启。

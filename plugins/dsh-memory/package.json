@@ -1,6 +1,6 @@
 {
   "name": "dsh-memory",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "DSH 记忆插件：让 AI 记住用户信息、偏好、重要事件，每次对话自动注入相关记忆。",
   "type": "module",
   "main": "lib/index.js",
@@ -19,7 +19,8 @@
   },
   "peerDependencies": {
     "react": "^18.2.0",
-    "@deepseek-ai/cordis": "^4.0.1"
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/schemastery": "^2.6.0"
   },
   "license": "MIT"
 }

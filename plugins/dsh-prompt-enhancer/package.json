@@ -1,7 +1,7 @@
 {
-  "name": "dsh-workspace-tree",
-  "description": "工作区文件树（GUI 功能）：在界面右侧浮动面板浏览工作区文件，点击预览文本内容",
+  "name": "dsh-prompt-enhancer",
   "version": "0.1.0",
+  "description": "RAG 风格知识库检索 + 系统提示词动态增强",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -12,14 +12,11 @@
   "dsh": {
     "client": {
       "platform": "web",
-      "inject": [
-        "@deepseek-ai/dsh-client-runtime"
-      ]
+      "inject": ["@deepseek-ai/dsh-client-runtime"]
     }
   },
   "peerDependencies": {
-    "react": "^18.2.0",
-    "@deepseek-ai/cordis": "^4.0.1"
+    "react": "^18.2.0"
   },
   "license": "MIT"
 }
