@@ -52,10 +52,6 @@ function saveSettings() {
 // settings.debugPort is set.
 loadSettings();
 
-// Process-level error handling
-process.on('uncaughtException', (err) => { log("[FATAL] " + err.message); })
-process.on('unhandledRejection', (r) => { log("[FATAL] Unhandled rejection: " + r); })
-
 // Optional Chrome DevTools Protocol endpoint for remote diagnostics, bound to
 // loopback only. Enabled by settings.debugPort (or DSH_DEBUG_PORT env) so the
 // user can inspect the GUI in Chrome/Edge DevTools (chrome://inspect).
@@ -725,37 +721,27 @@ function createWindow() {
     },
   });
 
-  // DSH GUI pane: an isolated WebContentsView
-  try {
-    dshView = new WebContentsView({
   // DSH GUI pane: an isolated WebContentsView to the right of the sidebar
+  dshView = new WebContentsView({
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-    });
-    mainWindow.contentView.addChildView(dshView);
-    layoutViews();
-  } catch (viewErr) {
-    log("[CRITICAL] WebContentsView failed: " + viewErr.message);
-    log("[CRITICAL] Falling back to simple BrowserWindow without split view");
-    dshView = null;
-  }
+    },
+  });
+  mainWindow.contentView.addChildView(dshView);
   layoutViews();
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
   mainWindow.on('resize', layoutViews);
 
-  // Always minimize to tray on close (Windows best practice)
   mainWindow.on('close', (e) => {
-    if (!isQuitting) {
+    if (!isQuitting && settings.minimizeToTray) {
       e.preventDefault();
       mainWindow.hide();
-      log('window hidden to tray');
     }
   });
-
   mainWindow.on('closed', () => { mainWindow = null; dshView = null; });
 
   // DSH pane: external links open in the system browser
@@ -1249,42 +1235,64 @@ if (!gotLock) {
 } else {
   app.on('second-instance', () => showMainWindow());
 
+  app.whenReady().then(() => {
   app.whenReady().then(async () => {
-  try {
-        app.setAppUserModelId('ai.deepseek.harness.desktop');
-        loadSettings();
-        registerIpc();
-        if (settings.autoStart) applyAutoStart(true); // re-assert on login items
-        createTray();
-        createWindow();
-        startSkinPolling();
-        startSessionBackup();
-        startSessionToolsServer();
-        // 恢复上次会话的崩溃状态（含安全模式）与熔断器
-        try {
-          const cs = loadCrashState();
-          server.crash.safeMode = !!cs.safeMode;
-          safeModeActive = !!cs.safeMode;
-          server.crash.consecutive = 0;
-          if (cs.crashes && cs.crashes.length > 0) {
-            const last = cs.crashes[cs.crashes.length - 1];
-            server.crash.lastCause = last.cause || null;
-            // 仅当最近一次崩溃在 60s 内才视为"延续中的崩溃"，保守防风暴
-            const lastTs = Date.parse(last.at || '');
-            if (!Number.isNaN(lastTs) && Date.now() - lastTs < 60_000) {
-              server.crash.consecutive = 1;
-              log('[anticrash] last crash was <60s ago — will use shorter backoff');
+    try {
+          loadSettings();
+          registerIpc();
+          if (settings.autoStart) applyAutoStart(true); // re-assert on login items
+          createWindow();
+          createTray();
+          startSkinPolling();
+          startSessionBackup();
+          startSessionToolsServer();
+          // 恢复上次会话的崩溃状态（含安全模式）与熔断器
+          try {
+            const cs = loadCrashState();
+            server.crash.safeMode = !!cs.safeMode;
+            safeModeActive = !!cs.safeMode;
+            server.crash.consecutive = 0;
+            if (cs.crashes && cs.crashes.length > 0) {
+              const last = cs.crashes[cs.crashes.length - 1];
+              server.crash.lastCause = last.cause || null;
+              // 仅当最近一次崩溃在 60s 内才视为"延续中的崩溃"，保守防风暴
+              const lastTs = Date.parse(last.at || '');
+              if (!Number.isNaN(lastTs) && Date.now() - lastTs < 60_000) {
+                server.crash.consecutive = 1;
+                log('[anticrash] last crash was <60s ago — will use shorter backoff');
+              }
+              log(`[anticrash] restored crash state: ${cs.crashes.length} crashes total, last=${server.crash.lastCause}, safeMode=${safeModeActive}`);
             }
-            log(`[anticrash] restored crash state: ${cs.crashes.length} crashes total, last=${server.crash.lastCause}, safeMode=${safeModeActive}`);
-          }
-          // 上次退出时处于安全模式 → 提示而非静默重启风暴
-          if (safeModeActive) log('[anticrash] service is in SAFE MODE (restored from last session)');
-        } catch (e) { log('[anticrash] restore crash state failed: ' + e.message); }
-        startWatchdog(); // L1 watchdog：运行期探活 + 僵死恢复
-        log(`started. userData=${app.getPath('userData')}`);
-      }
+            // 上次退出时处于安全模式 → 提示而非静默重启风暴
+            if (safeModeActive) log('[anticrash] service is in SAFE MODE (restored from last session)');
+          } catch (e) { log('[anticrash] restore crash state failed: ' + e.message); }
+          startWatchdog(); // L1 watchdog：运行期探活 + 僵死恢复
+          log(`started. userData=${app.getPath('userData')}`);
+    }
     catch (err) {
       log("[CRITICAL] App init failed: " + err.message);
-      log("[CRITICAL] Stack: " + err.stack);
+      log("[CRITICAL] Stack trace: " + err.stack);
     }
   });
+  });
+
+  app.on('window-all-closed', () => {
+    // keep running in tray on Windows (do nothing)
+  });
+
+  app.on('before-quit', (e) => {
+    if (isQuitting) return;
+    e.preventDefault();
+    quitApp();
+  });
+}
+
+async function quitApp() {
+  if (isQuitting) return;
+  isQuitting = true;
+  log('quitting');
+  if (server.startedByUs && !settings.keepServerOnQuit) {
+    await stopServer();
+  }
+  app.quit();
+}
