@@ -736,12 +736,15 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => mainWindow.show());
   mainWindow.on('resize', layoutViews);
 
+  // Always minimize to tray on close (Windows best practice)
   mainWindow.on('close', (e) => {
-    if (!isQuitting && settings.minimizeToTray) {
+    if (!isQuitting) {
       e.preventDefault();
       mainWindow.hide();
+      log('window hidden to tray');
     }
   });
+
   mainWindow.on('closed', () => { mainWindow = null; dshView = null; });
 
   // DSH pane: external links open in the system browser
