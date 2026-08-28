@@ -10,7 +10,7 @@ DSH wraps the deepseek-ai Web GUI into a full desktop experience — system tray
 
 ### Desktop Clients
 
-**Electron Shell (current):** `desktop/main.js` provides system tray, auto-start DSH service, crash recovery with exponential backoff + circuit breaker, safe mode isolation, and session backup/restore via 3090 HTTP bridge.
+**Desktop shell:** `desktop/main.js` provides system tray, auto-start DSH service, crash recovery with exponential backoff + circuit breaker, safe mode isolation, and session backup/restore via 3090 HTTP bridge.
 
 | Feature | Status |
 |---|---|
@@ -22,18 +22,17 @@ DSH wraps the deepseek-ai Web GUI into a full desktop experience — system tray
 | Peak/valley pricing countdown | OK |
 | One-click update check | OK |
 
-**WPF Native Shell (alternative):** Built on .NET 8 + C# + WinUI + WebView2, replacing Electron for smaller footprint (~35MB vs ~180MB).
+**WPF native shell:** Built on .NET 8 + C# + WinUI + WebView2. Bundle size ~35MB.
 
-| Capability | Electron | WPF Native |
-|---|---|---|
-| exe icon | OK | OK |
-| Window position memory | OK | OK |
-| Service status notification | OK | OK |
-| Cache cleanup | OK | OK |
-| Built-in log viewer | - | OK `LogViewer.xaml` |
-| Bundle size | ~180MB | ~35MB |
 
-All desktop behaviors route through the **3090 HTTP Bridge** — no code duplication between shells.
+| Feature | Status |
+|---|---|
+| exe icon | OK |
+| Window position memory | OK |
+| Service status notification | OK |
+| Cache cleanup | OK |
+| Built-in log viewer (`LogViewer.xaml`) | OK |
+| Bundle size | ~35MB |
 
 **WPF components:** `MainWindow.xaml.cs` (WebView2 host), `LogViewer.xaml.cs` (log panel), `SessionToolsServer.cs`, `CrashRecovery.cs`, `CircuitBreaker.cs`, `SkinWatcher.cs`. Source: `desktop-native/DeepSeekHarnessDesktop/`.
 
@@ -90,7 +89,7 @@ npm start
 
 ```
 deepseek_harness/
-+-- desktop/                    # Electron desktop client
++-- desktop/                    # Desktop shell
 +   +- main.js                  # Main process (tray, anti-crash, safe mode)
 +   +- preload.js               # IPC bridge
 +   +- assets/                  # Icons and resources
