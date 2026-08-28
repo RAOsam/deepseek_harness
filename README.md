@@ -1,87 +1,81 @@
 # DeepSeek Harness Desktop
 
-> DeepSeek Harness（DSH）的 Windows 桌面客户端 + 一组增强插件。
+> A Windows desktop client + plugin ecosystem for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
 
-基于 [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 的 Web GUI，封装为原生 Electron 桌面应用，提供系统托盘、自动服务管理、会话备份/回退等功能，并附带多个实用插件。
+DSH wraps the deepseek-ai Web GUI into a full desktop experience — system tray management, automatic service lifecycle, session backup/rollback, and a growing plugin ecosystem.
 
 ---
 
-## ✨ 功能一览
+## Features
 
-### 🖥️ 桌面客户端（desktop/）
+### Desktop Clients
 
-| 功能 | 说明 |
+**Electron Shell (current):** `desktop/main.js` provides system tray, auto-start DSH service, crash recovery with exponential backoff + circuit breaker, safe mode isolation, and session backup/restore via 3090 HTTP bridge.
+
+| Feature | Status |
 |---|---|
-| 原生窗口 | WebContentsView 嵌入 DSH Web GUI，支持窗口缩放、最小化到托盘 |
-| 自动服务管理 | 启动时自动检测并启动 DSH 服务，退出时可选保留服务 |
-| 系统托盘 | 重启服务、开机自启、安全模式/恢复模式、退出 |
-| 会话安全网 | 一键备份/回退/恢复会话（3090 HTTP 桥） |
-| **防崩溃自愈** | 崩溃归因 → 指数退避重启 → 自动安全模式 → 熔断限流（详见下文） |
-| 皮肤支持 | 读取 profile 配置自动应用皮肤（maid-atelier 永久启用） |
-| 峰谷倒计时 | DeepSeek 峰谷定价实时显示（9:00-12:00、14:00-18:00 北京时间） |
-| 一键更新 | 设置 → 版本更新，自动对比 npm 最新版本，一键下载更新 |
-| 零配置启动 | 首次运行自动通过 npx 下载 DSH CLI，无需手动安装 |
+| Auto service start/stop | OK |
+| Tray menu (restart, startup, safe mode) | OK |
+| Crash self-recovery (~2s avg restart) | OK |
+| Session backup & rollback | OK |
+| Skin support (maid-atelier built-in) | OK |
+| Peak/valley pricing countdown | OK |
+| One-click update check | OK |
 
-### 🔌 插件（plugins/）
+**WPF Native Shell (alternative):** Built on .NET 8 + C# + WinUI + WebView2, replacing Electron for smaller footprint (~35MB vs ~180MB).
 
-#### [dsh-memory](plugins/dsh-memory/) — 长期记忆管理
+| Capability | Electron | WPF Native |
+|---|---|---|
+| exe icon | OK | OK |
+| Window position memory | OK | OK |
+| Service status notification | OK | OK |
+| Cache cleanup | OK | OK |
+| Built-in log viewer | - | OK `LogViewer.xaml` |
+| Bundle size | ~180MB | ~35MB |
 
-卡片式 UI，支持分类分组、图片识别、整理预览。
+All desktop behaviors route through the **3090 HTTP Bridge** — no code duplication between shells.
 
-- 5 类记忆：偏好、信息、事件、规则、背景
-- 按分类分组显示，彩色大标签（分组头固定显示）
-- 直接渲染全部记忆卡片（保留滚动条，无顶部空白）
-- BM25 语义去重（阈值 0.18）
-- 整理前预览合并项，确认后再执行
-- 粘贴图片自动识别内容
-
-#### [dsh-persona-manager](plugins/dsh-persona-manager/) — 人设管理
-
-卡片式 UI，支持快速切换、Toast 提示、服务端持久化。
-
-- 多人设管理，一键切换
-- 切换时 Toast 通知当前人设
-- 人设绑定持久化到服务端（重启后恢复）
-- 会话 header 快速切换下拉
-
-#### [dsh-prompt-enhancer](plugins/dsh-prompt-enhancer/) — 提示词增强
-
-DashScope API 集成，支持自定义模型、连通检测。
-
-- 3 种模式：基础/标准/专家
-- 自定义模型列表（添加/删除/测试连通）
-- 模型连通状态实时显示
-- 知识库管理（BM25 检索）
-
-#### [dsh-session-tools](plugins/dsh-session-tools/) — 会话工具
-
-会话备份/回退/恢复（通过 3090 HTTP 桥）。
-
-#### [dsh-skin-switch](plugins/dsh-skin-switch/) — 皮肤切换
-
-设置页皮肤切换，内置 maid-atelier 皮肤。
-
-- 每张皮肤卡片显示 GitHub 仓库链接（`skin.json` 的 `repo` 字段），一键直达源码
-- 皮肤列表可排序，选中即应用
-
-#### [deepseek-balance](plugins/deepseek-balance/) — 余额监控
-
-侧边栏底部显示 DeepSeek 账户余额、用量统计、柱状图。
+**WPF components:** `MainWindow.xaml.cs` (WebView2 host), `LogViewer.xaml.cs` (log panel), `SessionToolsServer.cs`, `CrashRecovery.cs`, `CircuitBreaker.cs`, `SkinWatcher.cs`. Source: `desktop-native/DeepSeekHarnessDesktop/`.
 
 ---
 
-## 🚀 安装
+## Plugins
 
-### 前置条件
+Each plugin follows Cordis architecture: `lib/index.js` (server) + `lib/client.js` (UI slots). Register in `profiles/web/cordis.patch.yml`.
 
-- Windows 10/11
-- [Node.js](https://nodejs.org/) ≥ 20
+#### dsh-memory
+Long-term Memory Management
+Card UI with category grouping (Preference/Fact/Event/Rule/Context), BM25 semantic deduplication, preview-before-merge, paste-image OCR.
 
-### 方式一：下载安装包（推荐）
+#### dsh-persona-manager
+Persona Management
+Multi-p persona creation, toast notifications, server-side persistence, quick-switch dropdown.
 
-从 [Releases](https://github.com/RAOsam/deepseek_harness/releases) 下载最新安装包，双击安装即可。
+#### dsh-prompt-enhancer
+Prompt Enhancement
+DashScope API integration, 3 modes (Basic/Standard/Expert), custom models, real-time connectivity, knowledge base retrieval.
 
-### 方式二：从源码运行
+#### dsh-session-tools
+Session Tools
+Backup, rollback, restore via 3090 HTTP bridge.
+
+#### dsh-skin-switch
+Theme Switcher
+Settings page skin switching, maid-atelier included, GitHub repo links per skin.
+
+#### deepseek-balance
+Balance Monitor
+Sidebar widget showing DeepSeek account balance, usage stats, bar charts.
+
+---
+
+## Installation
+
+**Prerequisites:** Windows 10/11, Node.js >= 20.
+
+**Method 1:** Download from [Releases](https://github.com/RAOsam/deepseek_harness/releases).
+
+**Method 2:** From source:
 
 ```powershell
 git clone https://github.com/RAOsam/deepseek_harness.git
@@ -92,119 +86,86 @@ npm start
 
 ---
 
-## 📁 项目结构
+## Project Structure
 
 ```
 deepseek_harness/
-├── desktop/                    # Electron 桌面客户端
-│   ├── main.js                 # 主进程（窗口、服务管理、托盘、防崩溃、安全模式）
-│   ├── preload.js              # 预加载脚本（IPC 桥接）
-│   ├── assets/                 # 图标、资源
-│   ├── test-anticrash.js       # 防崩溃核心逻辑单元测试
-│   ├── test-anticrash-deep.js  # 防崩溃深度故障注入测试（13 场景）
-│   └── release/                # 构建产物
-├── docs/
-│   └── anti-crash-optimization.md  # 防崩溃优化方案设计文档
-├── plugins/                    # DSH 插件
-│   ├── dsh-memory/             # 长期记忆管理
-│   ├── dsh-persona-manager/    # 人设管理
-│   ├── dsh-prompt-enhancer/    # 提示词增强
-│   ├── dsh-session-tools/      # 会话备份/回退/恢复
-│   ├── dsh-skin-switch/        # 皮肤切换器
-│   └── deepseek-balance/       # 余额监控
-└── README.md
++-- desktop/                    # Electron desktop client
++   +- main.js                  # Main process (tray, anti-crash, safe mode)
++   +- preload.js               # IPC bridge
++   +- assets/                  # Icons and resources
++   +- test-anticrash-deep.js   # Fault injection tests (13 scenarios)
++   +- release/                 # Build artifacts
++-- desktop-native/             # WPF native shell alternative
++   +- DeepSeekHarnessDesktop/  # WinUI + WebView2 project
++-- docs/
++   +- native-desktop-analysis.md
++   +- optimized-memories.md    # Knowledge base
++-- plugins/                    # DSH plugins
++   +- dsh-memory/
++   +- dsh-persona-manager/
++   +- dsh-prompt-enhancer/
++   +- dsh-session-tools/
++   +- dsh-skin-switch/
++   +- deepseek-balance/
++-- README.md
 ```
 
 ---
 
-## 🔧 开发
+## Development
 
-### 插件开发规则
+### Plugin Rules
 
-插件采用 Cordis 架构，每个插件包含：
-- `lib/index.js` — 服务端（Host），注册 HTTP 路由
-- `lib/client.js` — 客户端（Client），注册 UI 槽位
-- `package.json` — 包描述
+Each plugin needs: `lib/index.js` (routes), `lib/client.js` (slots), `package.json`.
 
-**必须遵守：**
-1. ESM 模块不能用 `require()`，必须用 `import`
-2. 插件必须在 `profiles/web/cordis.patch.yml` 中注册
-3. 不能有重复的 `const` 声明
-4. `inject` 只声明实际使用的依赖
-5. 部署前用 `node --check` 验证语法
+**Must comply:**
+1. ESM: no `require()`, use `import`
+2. Must register in `profiles/web/cordis.patch.yml` under `- insert:` entries
+3. No duplicate `const` declarations
+4. `inject` only declares actual dependencies
+5. Validate with `node --check` before deploying
 
-### 3090 HTTP 桥端点
+### 3090 HTTP Bridge Endpoints
 
-| 端点 | 方法 | 说明 |
+| Endpoint | Method | Description |
 |---|---|---|
-| `/health` | GET | 健康检查（三层探针见下） |
-| `/health?probe=liveness` | GET | 存活探针：真实探活 3080 服务 |
-| `/health?probe=readiness` | GET | 就绪探针：服务状态 + 安全模式 |
-| `/health?probe=metrics` | GET | 指标：内存/运行时长/崩溃统计/熔断状态 |
-| `/backup` | GET | 备份当前会话 |
-| `/restore` | GET | 恢复会话 + 重载 GUI |
-| `/rollback` | GET | 回滚到最近备份 |
-| `/restart` | GET | 重启 DSH 服务（60s 限流 3 次） |
+|`/health` | GET | Health check |
+|`/health?probe=liveness` | GET | Liveness probe |
+|`/health?probe=readiness` | GET | Readiness status |
+|`/health?probe=metrics` | GET | Memory/uptime/crashes |
+|`/backup` | GET | Backup session |
+|`/restore` | GET | Restore + reload GUI |
+|`/rollback` | GET | Rollback to last backup |
+|`/restart` | GET | Restart service (rate limited) |
+|`/open?path=` | GET | Open file |
+|`/reveal?path=` | GET | Reveal in Explorer |
+|`/dom?q=` | GET | DOM query |
+### Anti-Crash Mechanism
 
-### 🛡️ 防崩溃机制（desktop/main.js）
+Three-layer defense inspired by Netflix Hystrix + Kubernetes + Sentinel:
 
-参考 Netflix Hystrix、Kubernetes 健康检查、Sentinel 限流降级设计，四层防御：
+| Layer | Mechanism |
+|---|---|
+| L1 Process Guardian | Crash attribution + auto restart (exit code/signal/stderr analysis) |
+| L1 Rate Limiting | Exponential backoff 1s→2s→4s… cap 60s; cooldown 120s after 3+ crashes |
+| L1 Auto Safe Mode | After 3 consecutive crashes → disable non-core plugins |
+| L2 Watchdog | Ping every 5s, kill after 3 failures |
+| L3 Persistence | `crash-state.json` survives restarts |
 
-| 层级 | 机制 | 说明 |
-|---|---|---|
-| L1 进程守护 | 崩溃归因 + 自动重启 | 根据退出码 / signal / stderr 区分端口冲突、OOM、插件崩溃、外部终止 |
-| L1 防风暴 | 指数退避 + 冷却 + 熔断 | 1s→2s→4s…上限 60s；60s 内 ≥3 次真实崩溃冷却 120s；熔断器滑动窗口 60s |
-| L1 自动安全模式 | 连续崩溃自动降级 | 连续 3 次运行期/插件崩溃 → 自动禁用非核心插件后重启（隔离问题插件） |
-| L2 watchdog | 运行期探活 | 每 5s 探活，连续 3 次失败 kill 子进程触发恢复（防僵死） |
-| L3 限流 | 会话工具限流 | `/restart` 60s 最多 3 次，超限返回 429 |
-| L4 持久化 | crash-state.json | 崩溃历史跨会话保存，重启后恢复计数与安全模式 |
+**Recovery chain:** kill → `cause=runtime` → backoff 1s → spawn → recovered in ~2s.
 
-**崩溃恢复链路（实测）：** kill 服务进程 → 日志出现 `cause=runtime` → 退避 1s → 自动 spawn 拉起，全程约 2 秒，桌面壳不重启、会话不丢。
-
-**测试：** `node desktop/test-anticrash-deep.js`（13 个故障注入场景，含真实崩溃注入验证）。
+**Test:** `node desktop/test-anticrash-deep.js` (13 scenarios including real crash tests).
 
 ---
 
+## Credits
+
+- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — Core framework
+- [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) — Sidebar design
 
 ---
 
-## 🖥️ 原生桌面壳（WPF + WebView2）
-
-基于 .NET 8 + C# + WinUI 的 **纯 Windows 原生壳**，替代 Electron。
-
-### ✨ 功能对比（Electron vs WPF Shell）
-
-| 能力 | Electron | WPF Native Shell |
-|---|---|---|
-| exe 图标 | ✅ | ✅ |
-| 窗口位置记忆 | ✅ | ✅ |
-| 服务状态通知 | ✅ | ✅ |
-| 缓存清理 | ✅ | ✅ |
-| 内置日志查看器 | ❌ | ✅ `LogViewer.xaml` |
-| 崩溃预防（安全模式/看门狗） | 仅 Electron 侧 | 通过 3090 HTTP 桥实现 |
-| bundle 体积 | ~180MB (chromium) | ~35MB (.NET Runtime) |
-
-### 🔗 架构说明
-
-所有桌面端行为统一走 **3090 HTTP 桥**——备份/回退/重启/健康检查全部复用服务端代码，无需在原生壳内重复实现。
-
-#### 核心组件
-
-- `MainWindow.xaml.cs` — WebView2 GUI 主窗口
-- `LogViewer.xaml.cs` — 系统日志面板（Electron 版无此功能）
-- `SessionToolsServer.cs` — 备份/回退/恢复 API
-- `CrashRecovery.cs` — 崩溃自愈
-- `CircuitBreaker.cs` — 熔断限流
-- `SkinWatcher.cs` — 皮肤热更新
-
-源码位置：`desktop-native/DeepSeekHarnessDesktop/`
-## 🙏 致谢
-
-- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — 核心框架
-- [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) — 侧边栏框架设计参考
-
----
-
-## 📄 许可证
+## License
 
 MIT
