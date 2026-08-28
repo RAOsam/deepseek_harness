@@ -1,0 +1,55 @@
+# Your patch layer for this dsh profile, applied after every bundle layer:
+# a top-level YAML array of loader patch entries (id-targeted config
+# overrides, disables, and insert lists; !!js expressions allowed).
+#
+# Explicit pwsh for the sandbox executor: the PATH-picked MSIX entry under
+# C:\Program Files\WindowsApps\...\pwsh.exe passes lstat but cannot be spawned
+# directly (ENOENT), while the Store execution alias resolves and spawns fine.
+- id: pwsh-sandbox
+  config:
+    pwshPath: C:/Users/lenovo/AppData/Local/Microsoft/WindowsApps/pwsh.exe
+
+# dsh-skin-switch (皮肤切换)
+- insert:
+    - id: dsh-skin-switch
+      name: '@deepseek-ai/dsh-skin-switch'
+
+# dsh-session-tools (会话工具)
+- insert:
+    - id: dsh-session-tools
+      name: 'dsh-session-tools'
+
+# dsh-persona-manager (人设管理)
+- insert:
+    - id: dsh-persona-manager
+      name: 'dsh-persona-manager'
+
+# dsh-memory (长期记忆)
+- insert:
+    - id: dsh-memory
+      name: 'dsh-memory'
+
+# dsh-prompt-enhancer (知识库提示词增强)
+- insert:
+    - id: prompt-enhancer
+      name: 'dsh-prompt-enhancer'
+
+# maid-atelier skin (永久启用)
+- insert:
+    - id: ui-skin-maid-atelier
+      name: '@dsh-external/dsh-client-ui-skin-maid-atelier'
+
+# 更积极的压缩配置（解决上下文溢出问题）
+- id: compaction-basic
+  config:
+    thresholdRatio: 0.6
+    retainRatio: 0.12
+    maxTokens: 16384
+    compactionRetries: 3
+
+# 更激进的工具结果裁剪（压缩前先截断超大输出）
+- id: tool-result-pruner
+  config:
+    thresholdChars: 4096
+    headChars: 2048
+    tailChars: 512

@@ -1,0 +1,9 @@
+<Application x:Class="DeepSeekHarnessDesktop.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:DeepSeekHarnessDesktop"
+             Exit="OnExit">
+    <Application.Resources>
+        <!-- 托盘图标由代码创建 -->
+    </Application.Resources>
+</Application>

@@ -1,0 +1,310 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Threading;
+using System.Windows;
+using DeepSeekHarnessDesktop.Services;
+using Hardcodet.Wpf.TaskbarNotification;
+
+namespace DeepSeekHarnessDesktop;
+
+public partial class App : Application
+{
+    private Mutex? _singleInstanceMutex;
+    public AppSettings Settings { get; private set; } = null!;
+    public DshServiceManager Server { get; private set; } = null!;
+    public CrashRecovery Recovery { get; private set; } = null!;
+    public SessionToolsServer ToolsServer { get; private set; } = null!;
+    public SessionBackup Backup { get; private set; } = null!;
+    public SkinWatcher SkinWatcher { get; private set; } = null!;
+    private TaskbarIcon? _trayIcon;
+    private MainWindow? _mainWindow;
+
+    // 用户数据目录
+    private static readonly string UserDataDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "DeepSeek Harness Desktop");
+
+    // profile 目录
+    private static readonly string DshHome = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        ".dsh");
+
+    private static readonly string ProfileDir = Path.Combine(DshHome, "profiles", "web");
+
+    protected override void OnStartup(StartupEventArgs e)
+    {
+        // 单实例检查
+        _singleInstanceMutex = new Mutex(true, "DeepSeekHarnessDesktop-SingleInstance", out var createdNew);
+        if (!createdNew)
+        {
+            // 已有一个实例，激活它
+            MessageBox.Show("DeepSeek Harness Desktop 已在运行中。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            Shutdown();
+            return;
+        }
+
+        // 初始化日志
+        Log.Init(UserDataDir);
+        Log.Info("=== DeepSeek Harness Desktop (native) starting ===");
+
+        // 加载设置
+        Settings = AppSettings.Load(UserDataDir);
+        Log.Info($"settings loaded: host={Settings.Host} port={Settings.Port}");
+
+        // 初始化服务管理器
+        Server = new DshServiceManager
+        {
+            Host = Settings.Host,
+            TargetPort = Settings.Port,
+            NodePath = Settings.NodePath,
+            DshCliPath = Settings.DshCliPath,
+            WorkspaceDir = Settings.WorkspaceDir
+        };
+
+        // 初始化崩溃状态存储
+        var stateStore = new CrashStateStore(DshHome);
+        stateStore.Load();
+
+        // 初始化崩溃恢复
+        Recovery = new CrashRecovery(Server, stateStore, ProfileDir);
+        if (stateStore.SafeMode)
+        {
+            Log.Info("上一次安全模式仍激活，恢复。");
+        }
+
+        // 接通子进程退出 → 崩溃恢复链路
+        Server.ChildExited += (exitCode, signal) =>
+        {
+            // 异步处理，不阻塞事件
+            _ = Recovery.HandleCrash(exitCode, signal, Server.ManualStop);
+        };
+
+        // 服务状态变化 → 托盘通知
+        Server.StatusChanged += (status, detail) =>
+        {
+            if (_trayIcon == null) return;
+            switch (status)
+            {
+                case DshServiceManager.Status.Running:
+                    _trayIcon.ShowBalloonTip("DSH 服务", "服务已就绪", Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Info);
+                    break;
+                case DshServiceManager.Status.Error:
+                    _trayIcon.ShowBalloonTip("DSH 服务", $"启动失败：{detail}", Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Error);
+                    break;
+                case DshServiceManager.Status.Stopped:
+                    _trayIcon.ShowBalloonTip("DSH 服务", "服务已停止", Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Info);
+                    break;
+            }
+        };
+
+        // 初始化会话备份
+        Backup = new SessionBackup(UserDataDir, ProfileDir);
+        Recovery.SetBackup(Backup);
+
+        // 初始化皮肤感知
+        SkinWatcher = new SkinWatcher(ProfileDir);
+
+        // 初始化 3090 桥
+        ToolsServer = new SessionToolsServer(Server, Recovery, Backup, Settings, 3090);
+
+        // 创建主窗口
+        _mainWindow = new MainWindow(Server, Recovery);
+
+        // 挂接 DOM 执行器（供 3090 桥的 /dom 端点使用，需通过 Dispatcher 切换到 UI 线程）
+        ToolsServer.DomExecutor = async js =>
+        {
+            var result = await _mainWindow!.Dispatcher.Invoke(async () =>
+            {
+                if (_mainWindow?.Browser?.CoreWebView2 == null)
+                    return "{\"error\":\"no webview\"}";
+                return await _mainWindow.Browser.CoreWebView2.ExecuteScriptAsync(js) ?? "null";
+            });
+            return result;
+        };
+
+        // 会话恢复/回滚后 → 刷新页面（对应 Electron 的 restoreSession 中 reload）
+        ToolsServer.OnSessionRestored = () =>
+        {
+            _mainWindow?.Dispatcher.Invoke(() =>
+            {
+                try { _mainWindow?.Browser?.Reload(); } catch { }
+            });
+        };
+
+        // 皮肤变化 → 广播到 WebView2
+        SkinWatcher.SkinChanged += skinId =>
+        {
+            _mainWindow?.BroadcastSkin(skinId ?? "");
+        };
+
+        // 设置托盘图标
+        SetupTray();
+
+        // 显示主窗口（根据设置）
+        if (!Settings.MinimizeToTray)
+        {
+            _mainWindow.Show();
+        }
+
+        // 启动 3090 桥
+        ToolsServer.Start();
+
+        // 启动皮肤监控
+        SkinWatcher.Start();
+
+        // 启动服务（如配置允许）
+        if (Settings.StartServerOnLaunch)
+        {
+            _ = Server.EnsureServer().ContinueWith(async t =>
+            {
+                // 如果端口有服务，直接连接；否则启动
+                if (Server.CurrentStatus == DshServiceManager.Status.Running)
+                {
+                    Log.Info("已连接至运行中的 DSH 服务");
+                    return;
+                }
+                await Server.StartServer();
+                // 如果服务启动成功且崩溃状态不是安全模式，启动 watchdog
+                if (Server.CurrentStatus == DshServiceManager.Status.Running)
+                {
+                    if (!Recovery.SafeModeActive)
+                    {
+                        Recovery.StartWatchdog();
+                    }
+                }
+            });
+        }
+
+        base.OnStartup(e);
+    }
+
+    private void SetupTray()
+    {
+        _trayIcon = new TaskbarIcon
+        {
+            Icon = System.Drawing.Icon.ExtractAssociatedIcon(Process.GetCurrentProcess().MainModule?.FileName ?? ""),
+            ToolTipText = "DeepSeek Harness Desktop",
+            Visibility = Visibility.Visible
+        };
+
+        // 托盘菜单（WPF ContextMenu，注册 Click 事件）
+        var menu = new System.Windows.Controls.ContextMenu();
+
+        System.Windows.Controls.MenuItem AddItem(string header, Action action)
+        {
+            var item = new System.Windows.Controls.MenuItem { Header = header };
+            item.Click += (_, _) => action();
+            menu.Items.Add(item);
+            return item;
+        }
+        void AddSeparator()
+        {
+            menu.Items.Add(new System.Windows.Controls.Separator());
+        }
+
+        AddItem("显示主窗口", () => ShowWindow());
+        AddItem("在浏览器中打开", () =>
+        {
+            try { Process.Start(new ProcessStartInfo($"http://{Settings.Host}:{Settings.Port}") { UseShellExecute = true }); }
+            catch { }
+        });
+        AddSeparator();
+        AddItem("重启 DSH 服务", () =>
+        {
+            _ = Task.Run(async () =>
+            {
+                await Server.StopServer();
+                await Task.Delay(500);
+                Server.ManualStop = false;
+                await Server.StartServer();
+            });
+        });
+        System.Windows.Controls.MenuItem autoStartItem = null!;
+        autoStartItem = AddItem("开机自启", () =>
+        {
+            Settings.AutoStart = !Settings.AutoStart;
+            Settings.Save();
+            SetAutoStart(Settings.AutoStart);
+            autoStartItem.IsChecked = Settings.AutoStart;
+            _trayIcon.ShowBalloonTip("开机自启", Settings.AutoStart ? "已启用" : "已禁用", Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Info);
+        });
+        autoStartItem.IsChecked = Settings.AutoStart;
+        AddSeparator();
+        AddItem("启动安全模式", () => _ = Recovery.EnterSafeMode());
+        AddItem("恢复正常模式", () => Recovery.ClearSafeMode());
+        AddSeparator();
+        AddItem("清理 WebView2 缓存", () =>
+        {
+            _ = _mainWindow?.ClearCache();
+            _trayIcon?.ShowBalloonTip("缓存", "WebView2 缓存已清理", Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Info);
+        });
+        AddItem("查看日志", () =>
+        {
+            var viewer = new LogViewer();
+            viewer.Show();
+        });
+        AddSeparator();
+        AddItem("退出", () =>
+        {
+            if (_mainWindow != null) _mainWindow.ForceQuit = true;
+            if (!Settings.KeepServerOnQuit) _ = Server.StopServer();
+            _trayIcon?.Dispose();
+            Shutdown();
+        });
+
+        _trayIcon.ContextMenu = menu;
+
+        // 双击托盘显示窗口
+        _trayIcon.DoubleClickCommand = new RelayCommand(() => ShowWindow());
+    }
+
+    private void ShowWindow()
+    {
+        if (_mainWindow == null) return;
+        _mainWindow.Show();
+        _mainWindow.WindowState = WindowState.Normal;
+        _mainWindow.Activate();
+    }
+
+    private void SetAutoStart(bool enable)
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true);
+            if (key == null) return;
+            if (enable)
+            {
+                var exe = Process.GetCurrentProcess().MainModule?.FileName;
+                if (exe != null) key.SetValue("DeepSeekHarnessDesktop", $"\"{exe}\"");
+            }
+            else
+            {
+                key.DeleteValue("DeepSeekHarnessDesktop", false);
+            }
+        }
+        catch (Exception e) { Log.Error($"auto-start failed: {e.Message}"); }
+    }
+
+    private void OnExit(object? sender, ExitEventArgs e)
+    {
+        Log.Info("=== DeepSeek Harness Desktop (native) shutting down ===");
+        ToolsServer?.Dispose();
+        SkinWatcher?.Dispose();
+        Recovery?.Dispose();
+        Server?.Dispose();
+        _trayIcon?.Dispose();
+        _singleInstanceMutex?.ReleaseMutex();
+        _singleInstanceMutex?.Dispose();
+    }
+}
+
+/// <summary>简单的 WPF 命令实现（用于托盘双击）。</summary>
+public class RelayCommand : System.Windows.Input.ICommand
+{
+    private readonly Action _execute;
+    public event EventHandler? CanExecuteChanged { add { } remove { } }
+    public RelayCommand(Action execute) => _execute = execute;
+    public bool CanExecute(object? parameter) => true;
+    public void Execute(object? parameter) => _execute();
+}
