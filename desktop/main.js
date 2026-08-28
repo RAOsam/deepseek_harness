@@ -1236,44 +1236,38 @@ if (!gotLock) {
   app.on('second-instance', () => showMainWindow());
 
   app.whenReady().then(() => {
-  app.whenReady().then(async () => {
+    app.setAppUserModelId('ai.deepseek.harness.desktop');
+    loadSettings();
+    registerIpc();
+    if (settings.autoStart) applyAutoStart(true); // re-assert on login items
+    createWindow();
+    createTray();
+    console.error("[TRAY-CREATED] tray object:", !!tray ? "exists" : "null");
+    startSkinPolling();
+    startSessionBackup();
+    startSessionToolsServer();
+    // 恢复上次会话的崩溃状态（含安全模式）与熔断器
     try {
-          loadSettings();
-          registerIpc();
-          if (settings.autoStart) applyAutoStart(true); // re-assert on login items
-          createWindow();
-          createTray();
-          startSkinPolling();
-          startSessionBackup();
-          startSessionToolsServer();
-          // 恢复上次会话的崩溃状态（含安全模式）与熔断器
-          try {
-            const cs = loadCrashState();
-            server.crash.safeMode = !!cs.safeMode;
-            safeModeActive = !!cs.safeMode;
-            server.crash.consecutive = 0;
-            if (cs.crashes && cs.crashes.length > 0) {
-              const last = cs.crashes[cs.crashes.length - 1];
-              server.crash.lastCause = last.cause || null;
-              // 仅当最近一次崩溃在 60s 内才视为"延续中的崩溃"，保守防风暴
-              const lastTs = Date.parse(last.at || '');
-              if (!Number.isNaN(lastTs) && Date.now() - lastTs < 60_000) {
-                server.crash.consecutive = 1;
-                log('[anticrash] last crash was <60s ago — will use shorter backoff');
-              }
-              log(`[anticrash] restored crash state: ${cs.crashes.length} crashes total, last=${server.crash.lastCause}, safeMode=${safeModeActive}`);
-            }
-            // 上次退出时处于安全模式 → 提示而非静默重启风暴
-            if (safeModeActive) log('[anticrash] service is in SAFE MODE (restored from last session)');
-          } catch (e) { log('[anticrash] restore crash state failed: ' + e.message); }
-          startWatchdog(); // L1 watchdog：运行期探活 + 僵死恢复
-          log(`started. userData=${app.getPath('userData')}`);
-    }
-    catch (err) {
-      log("[CRITICAL] App init failed: " + err.message);
-      log("[CRITICAL] Stack trace: " + err.stack);
-    }
-  });
+      const cs = loadCrashState();
+      server.crash.safeMode = !!cs.safeMode;
+      safeModeActive = !!cs.safeMode;
+      server.crash.consecutive = 0;
+      if (cs.crashes && cs.crashes.length > 0) {
+        const last = cs.crashes[cs.crashes.length - 1];
+        server.crash.lastCause = last.cause || null;
+        // 仅当最近一次崩溃在 60s 内才视为"延续中的崩溃"，保守防风暴
+        const lastTs = Date.parse(last.at || '');
+        if (!Number.isNaN(lastTs) && Date.now() - lastTs < 60_000) {
+          server.crash.consecutive = 1;
+          log('[anticrash] last crash was <60s ago — will use shorter backoff');
+        }
+        log(`[anticrash] restored crash state: ${cs.crashes.length} crashes total, last=${server.crash.lastCause}, safeMode=${safeModeActive}`);
+      }
+      // 上次退出时处于安全模式 → 提示而非静默重启风暴
+      if (safeModeActive) log('[anticrash] service is in SAFE MODE (restored from last session)');
+    } catch (e) { log('[anticrash] restore crash state failed: ' + e.message); }
+    startWatchdog(); // L1 watchdog：运行期探活 + 僵死恢复
+    log(`started. userData=${app.getPath('userData')}`);
   });
 
   app.on('window-all-closed', () => {
