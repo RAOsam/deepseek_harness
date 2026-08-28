@@ -905,10 +905,6 @@ function buildMenu() {
 function createTray() {
   tray = new Tray(trayIcon());
   tray.on('click', showMainWindow);
-  tray.setContextMenu(buildMenu()); // Explicitly set on creation
-  tray.on('context-menu', () => {
-    if (tray && tray.contextMenu) { tray.popUpContextMenu(tray.contextMenu); }
-  });
   updateTray();
 }
 
