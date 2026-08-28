@@ -32,3 +32,9 @@ desktop/scripts/.z50-profile/
 desktop/scripts/debug-screenshot.png
 desktop/scripts/*.txt
 desktop/scripts/*.err
+
+# Local backups & scratch
+desktop/*.bak-*
+desktop/asar-extract-tmp/
+plugins/_review/
+plugins/dsh-skin-switch/skins/liquid-glass/

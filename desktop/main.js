@@ -83,491 +83,6 @@ function log(msg) {
   } catch { /* logging must never crash the app */ }
 }
 
-// ======================================================================
-//  WATCHDOG v3 — crash recovery, tiered disabling, GUI health, overlay cleanup
-// ======================================================================
-
-function crashReportPath() {
-  return path.join(app.getPath('userData'), 'crash-report.json');
-}
-
-function disabledOverlayPath() {
-  return path.join(app.getPath('userData'), 'disabled-by-watchdog.yml');
-}
-
-// ─── multi-line stderr block accumulator ───
-// DSH errors are multi-line nested causes. Accumulate lines until the block
-// ends (Node.js vX.XX or empty line after error), then parse the whole block.
-let stderrBlock = [];
-
-function flushStderrBlock() {
-  if (stderrBlock.length === 0) return;
-  const plugin = parsePluginFromBlock(stderrBlock);
-  if (plugin) writeCrashReport(plugin, stderrBlock.slice(0, 3).join(' | '));
-  stderrBlock = [];
-}
-
-// Parse a full error block for the innermost failing plugin name.
-// Priority: "failed to import loader entry <name>" (inner) > "Cannot find package" > others.
-function parsePluginFromBlock(lines) {
-  const block = lines.join('\n');
-  // Inner: "failed to import loader entry <name>" — find ALL, take the LAST (deepest)
-  const imports = [...block.matchAll(/failed to import loader entry\s+(\S+)/g)];
-  for (let i = imports.length - 1; i >= 0; i--) {
-    const name = imports[i][1];
-    if (name !== 'include' && !name.startsWith('cordis:')) return name;
-  }
-  // "Cannot find package '...node_modules/<plugin>/...' "
-  const pkg = block.match(/Cannot find package\s+'[^']*[/\\]node_modules[/\\](@[^/\\]+[/\\][^/\\]+|[^/\\]+)[/\\]/);
-  if (pkg && pkg[1] !== 'include') return pkg[1].replace(/\\/g, '/');
-  // "failed to apply loader entry <name>" — outer, skip core names
-  const applies = [...block.matchAll(/failed to apply loader entry\s+(\S+)/g)];
-  for (let i = applies.length - 1; i >= 0; i--) {
-    const name = applies[i][1];
-    if (name !== 'include' && !name.startsWith('cordis:')) return name;
-  }
-  return null;
-}
-
-// Real-time line parser: accumulate stderr, flush on block boundary.
-function handleStderrLine(line) {
-  // Blank line terminates the current error block (design: block ends at
-  // "Node.js v" or an empty line after the error).
-  if (!line.trim()) {
-    flushStderrBlock();
-    return;
-  }
-  log('[dsh:err] ' + line);
-  tail(server.stderrTail, line);
-  stderrBlock.push(line);
-  if (stderrBlock.length > 1000) stderrBlock.shift(); // never grow unbounded
-  // Block boundary: "Node.js v" line or standalone "[exit code:" line
-  if (/^Node\.js v\d/.test(line) || /^\[exit code:/.test(line)) {
-    flushStderrBlock();
-  }
-}
-
-// ─── crash report ───
-function writeCrashReport(plugin, errorLine) {
-  try {
-    const report = { plugin, error: errorLine.slice(0, 500), timestamp: Date.now() };
-    fs.writeFileSync(crashReportPath(), JSON.stringify(report, null, 2), 'utf8');
-    log(`crash-report written: plugin=${plugin}`);
-  } catch { /* never crash the app */ }
-}
-
-function readCrashReport() {
-  try {
-    const raw = fs.readFileSync(crashReportPath(), 'utf8');
-    const report = JSON.parse(raw);
-    if (report.timestamp && Date.now() - report.timestamp < 120_000) return report; // 2 min TTL
-  } catch { /* ignore */ }
-  return null;
-}
-
-function clearCrashReport() {
-  try { fs.unlinkSync(crashReportPath()); } catch { /* ignore */ }
-}
-
-// ─── overlay management (disabled-by-watchdog.yml) ───
-// Never touches cordis.patch.yml. The overlay is merged via --patch at spawn.
-
-function readOverlayEntries() {
-  try {
-    const text = fs.readFileSync(disabledOverlayPath(), 'utf8');
-    const entries = [];
-    const matches = [...text.matchAll(/^- id:\s*(\S+)/gm)];
-    for (const m of matches) entries.push(m[1]);
-    return entries;
-  } catch { return []; }
-}
-
-// entries: array of ids (plain strings) OR {id, at} objects. Plain strings
-// get the current timestamp; objects keep their original disabled-at —
-// cleanup relies on stable timestamps to tell stale entries from fresh ones.
-function writeOverlayEntries(entries, reason) {
-  const file = disabledOverlayPath();
-  const ts = new Date().toISOString();
-  if (entries.length === 0) {
-    try { fs.unlinkSync(file); } catch { /* ignore */ }
-    log('watchdog overlay: cleared (all plugins re-enabled)');
-    return;
-  }
-  const header = '# Disabled by watchdog — auto-generated, safe to delete.\n# To re-enable all plugins, delete this file or use tray menu.\n';
-  const body = entries.map((e) => {
-    const id = typeof e === 'string' ? e : e.id;
-    const at = typeof e === 'string' ? ts : (e.at ? new Date(e.at).toISOString() : ts);
-    return `- id: ${id}\n  disabled: true\n  # disabled-by-watchdog: ${reason}\n  # disabled-at: ${at}\n`;
-  }).join('\n');
-  fs.writeFileSync(file, header + body, 'utf8');
-}
-
-function disablePluginInOverlay(pluginName, reason) {
-  const entries = readOverlayEntriesDetailed(); // keep {id, at} so old timestamps survive
-  if (entries.some((e) => e.id === pluginName)) return; // already disabled
-  entries.push({ id: pluginName, at: Date.now() });
-  writeOverlayEntries(entries, reason);
-  log(`watchdog disabled: ${pluginName} (${reason})`);
-  notifyWatchdogState();
-}
-
-function clearDisabledOverlay() {
-  writeOverlayEntries([], 'manual re-enable');
-  crashTier = 0;
-  safeModeActive = false;
-  notifyWatchdogState();
-}
-
-// Return ["--patch", file] when the watchdog overlay is non-empty, so the
-// spawned `dsh` merges it over cordis.patch.yml (never touches patch.yml).
-function getPatchArgs() {
-  const file = disabledOverlayPath();
-  try {
-    if (fs.existsSync(file) && fs.statSync(file).size > 10) {
-      return ['--patch', file];
-    }
-  } catch { /* ignore */ }
-  return [];
-}
-
-// Read overlay entries including their "# disabled-at:" timestamps.
-function readOverlayEntriesDetailed() {
-  try {
-    const text = fs.readFileSync(disabledOverlayPath(), 'utf8');
-    const out = [];
-    let cur = null;
-    for (const line of text.split(/\r?\n/)) {
-      const m = line.match(/^- id:\s*(\S+)/);
-      if (m) { cur = { id: m[1], at: 0 }; out.push(cur); continue; }
-      const t = cur && line.match(/#\s*disabled-at:\s*(\S+)/);
-      if (t) cur.at = Date.parse(t[1]) || cur.at;
-    }
-    return out;
-  } catch { return []; }
-}
-
-// Clean up overlay entries after a successful start, so disabled-by-watchdog
-// never grows forever. The overlay lives in its own file (patch.yml rows are
-// always "enabled" there), so an entry is only stale when it is OLD: it was
-// disabled more than CLEANUP_STALE_MS ago and the service has stayed healthy
-// since. Fresh entries (the current crash episode) are kept, recent winners
-// re-appear on the next restart only after the stale window elapses — which
-// is safe because a still-broken plugin simply gets disabled again at Level 1.
-function cleanupOverlayAfterSuccess() {
-  const entries = readOverlayEntriesDetailed();
-  if (entries.length === 0) return;
-  const now = Date.now();
-  const drop = [];
-  const keep = [];
-  for (const e of entries) {
-    if (e.at && now - e.at >= WATCHDOG.CLEANUP_STALE_MS) drop.push(e.id);
-    else keep.push(e.id);
-  }
-  if (drop.length) {
-    writeOverlayEntries(keep, 'cleanup after successful start');
-    log(`watchdog overlay cleanup: ${drop.join(', ')} 已停用超过 ${WATCHDOG.CLEANUP_STALE_MS / 3600000}h，已从 overlay 清理（下次重启自动重新启用）`);
-    notifyWatchdogState();
-  } else {
-    log(`watchdog: service healthy with ${entries.length} disabled plugin(s): ${entries.map((e) => e.id).join(', ')}`);
-  }
-}
-
-// ─── tiered crash handling ───
-const WATCHDOG = {
-  COOLDOWN_MS: 30_000,       // startup grace: only check process alive
-  INTERVAL_MS: 10_000,       // health check interval
-  PAGE_CHECK_MS: 15_000,     // GUI page health check interval
-  MAX_FAILURES: 3,           // consecutive failures before safe mode
-  CLEANUP_STALE_MS: 24 * 60 * 60 * 1000, // overlay entries older than this are cleaned up after success (24h)
-  SAFE_MODE_KEEP: [          // plugins to KEEP in safe mode (Level 3)
-    'pwsh-sandbox',
-    '@deepseek-ai/dsh-skin-switch',
-    '@dsh-external/dsh-client-ui-skin-maid-atelier',
-    'dsh-session-tools',
-  ],
-  LEVEL2_KEEP: [             // plugins to KEEP in Level 2 (non-core disable)
-    'pwsh-sandbox',
-    '@deepseek-ai/dsh-skin-switch',
-    '@dsh-external/dsh-client-ui-skin-maid-atelier',
-    'dsh-session-tools',
-    'dsh-persona-manager',
-    'dsh-memory',
-  ],
-};
-
-let watchdogTimer = null;
-let pageWatchdogTimer = null;
-let watchdogState = 'idle';  // idle | cooldown | healthy | crashed | recovering | safe-mode
-let consecutiveFailures = 0;
-let serviceStartTime = 0;
-let crashTier = 0;           // 0 = none, 1 = culprit only, 2 = non-core off, 3 = safe mode
-let safeModeActive = false;  // sticky until user re-enables (tray / overlay clear)
-
-// ─── watchdog state notification ───
-function notifyWatchdogState() {
-  const status = getWatchdogStatus();
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
-      win.webContents.send('dsh:watchdog', status);
-    }
-  }
-  if (dshView && !dshView.webContents.isDestroyed()) {
-    dshView.webContents.send('dsh:watchdog', status);
-  }
-  updateTray();
-}
-
-function getWatchdogStatus() {
-  const disabled = readOverlayEntries();
-  return {
-    state: safeModeActive ? 'safe-mode' : watchdogState,
-    tier: crashTier,
-    safeMode: safeModeActive,
-    consecutiveFailures,
-    disabledPlugins: disabled,
-    disabledCount: disabled.length,
-  };
-}
-
-// ─── service watchdog ───
-let recovering = false; // re-entrancy guard: one recovery chain at a time
-
-function startWatchdog() {
-  if (watchdogTimer) clearInterval(watchdogTimer);
-  notifyWatchdogState(); // push initial state (loading page + tray)
-  watchdogTimer = setInterval(async () => {
-    if (!server.startedByUs || !server.child) {
-      if (watchdogState !== 'idle') { watchdogState = 'idle'; notifyWatchdogState(); }
-      return;
-    }
-    if (server.status !== 'running' && server.status !== 'starting') return;
-
-    const uptime = Date.now() - serviceStartTime;
-
-    // Phase 1: cooldown — only check process alive
-    if (uptime < WATCHDOG.COOLDOWN_MS) {
-      watchdogState = 'cooldown';
-      if (server.child.exitCode !== null && !recovering) {
-        log('watchdog: process died during cooldown');
-        watchdogState = 'crashed';
-        notifyWatchdogState();
-        recovering = true;
-        try { await handleCrash(); } finally { recovering = false; }
-      }
-      return;
-    }
-
-    // Phase 2: HTTP health check
-    const alive = await httpProbeReady(settings.host, settings.port, 3000);
-    if (!alive) {
-      consecutiveFailures++;
-      watchdogState = 'crashed';
-      log(`watchdog: health check failed (${consecutiveFailures}/${WATCHDOG.MAX_FAILURES})`);
-      notifyWatchdogState();
-      if (!recovering) {
-        recovering = true;
-        try {
-          // Tiered recovery inside handleCrash; MAX_FAILURES is the backstop
-          // that forces safe mode even if single-shot recovery kept failing.
-          if (consecutiveFailures >= WATCHDOG.MAX_FAILURES && crashTier < 2) {
-            crashTier = 2; // skip Level 2 straight-up, next escalation is safe mode
-          }
-          await handleCrash();
-        } finally {
-          recovering = false;
-        }
-      }
-    } else {
-      if (consecutiveFailures > 0) {
-        log('watchdog: service recovered');
-        cleanupOverlayAfterSuccess();
-      }
-      consecutiveFailures = 0;
-      crashTier = 0; // healthy again — next crash starts from Level 1
-      watchdogState = 'healthy';
-      clearCrashReport();
-      notifyWatchdogState();
-    }
-  }, WATCHDOG.INTERVAL_MS);
-
-  // GUI page watchdog (separate timer)
-  // startPageWatchdog(); // disabled
-}
-
-function stopWatchdog() {
-  if (watchdogTimer) { clearInterval(watchdogTimer); watchdogTimer = null; }
-  stopPageWatchdog();
-  watchdogState = 'idle';
-}
-
-// ─── GUI page watchdog ───
-function startPageWatchdog() {
-  if (pageWatchdogTimer) clearInterval(pageWatchdogTimer);
-  pageWatchdogTimer = setInterval(async () => {
-    if (!dshView || dshView.webContents.isDestroyed()) return;
-    if (server.status !== 'running') return;
-    try {
-      const alive = await dshView.webContents.executeJavaScript(
-        'document.getElementById("root")?.childElementCount > 0',
-        true, 3000
-      );
-      if (!alive) {
-        log('watchdog: GUI page white screen — reloading');
-        dshView.webContents.reload();
-      }
-    } catch {
-      log('watchdog: GUI page timeout — reloading');
-      dshView.webContents.reload();
-    }
-  }, WATCHDOG.PAGE_CHECK_MS);
-}
-
-function stopPageWatchdog() {
-  if (pageWatchdogTimer) { clearInterval(pageWatchdogTimer); pageWatchdogTimer = null; }
-}
-
-// ─── crash handler: tiered disabling ───
-// Tier 1: disable the identified crashing plugin only.
-// Tier 2: disable all non-core plugins (keep LEVEL2_KEEP list).
-// Tier 3: safe mode — keep only SAFE_MODE_KEEP (minimal working set).
-// Every tier waits for recovery verification before escalating further.
-
-async function handleCrash() {
-  if (crashTier >= 3) return; // safe mode is the ceiling — no further escalation
-  flushStderrBlock(); // ensure any pending stderr is parsed
-  const report = readCrashReport();
-  if (crashTier === 0 && report && report.plugin) {
-    // Level 1: disable the identified culprit only — if it suffices, stop here
-    log(`watchdog: crash-report identifies plugin "${report.plugin}" (Level 1)`);
-    disablePluginInOverlay(report.plugin, report.error);
-    setServerStatus('error', `⚠ 插件 ${report.plugin} 导致崩溃，已自动禁用 (Level 1)`);
-    crashTier = 1;
-  } else if (crashTier === 0) {
-    log('watchdog: no specific plugin identified, restarting without disabling');
-    setServerStatus('error', '⚠ 服务崩溃，无法定位问题插件');
-    crashTier = 1;
-  }
-  clearCrashReport();
-  await restartServer();
-  const ok = await verifyRecovery();
-  if (!ok) await escalateTier();
-}
-
-// Escalate to the next tier when the current one failed recovery verification.
-async function escalateTier() {
-  if (crashTier === 1) {
-    crashTier = 2;
-    log('watchdog: Level 1 insufficient — escalating to Level 2 (disable non-core)');
-    disableAllExcept(WATCHDOG.LEVEL2_KEEP, 'level 2');
-    setServerStatus('error', '⚠ 崩溃持续 — 已禁用全部非核心插件 (Level 2)');
-    clearCrashReport();
-    await restartServer();
-    const ok = await verifyRecovery();
-    if (!ok) {
-      crashTier = 3;
-      await handleSafeMode();
-    }
-  } else if (crashTier === 2) {
-    crashTier = 3;
-    await handleSafeMode();
-  }
-}
-
-// ─── safe mode (Level 3): keep only the minimal working set ───
-async function handleSafeMode() {
-  log('watchdog: entering safe mode (Level 3)');
-  safeModeActive = true;
-  watchdogState = 'safe-mode';
-  disableAllExcept(WATCHDOG.SAFE_MODE_KEEP, 'safe mode');
-  clearCrashReport();
-  consecutiveFailures = 0;
-  setServerStatus('error', '🛡 安全模式 — 仅保留核心插件');
-  await restartServer();
-  await verifyRecovery();
-}
-
-// Disable every patch.yml plugin not in the keep list (Level 2 / Level 3).
-function disableAllExcept(keepList, reason) {
-  const patchFile = path.join(app.getPath('home'), '.dsh', 'profiles', 'web', 'cordis.patch.yml');
-  try {
-    const text = fs.readFileSync(patchFile, 'utf8');
-    const nameMatches = [...text.matchAll(/name:\s*['"]([^'"]+)['"]/g)];
-    for (const m of nameMatches) {
-      const name = m[1];
-      if (!keepList.includes(name)) disablePluginInOverlay(name, reason);
-    }
-  } catch (err) {
-    log('watchdog: tier parse failed: ' + err.message);
-  }
-}
-
-// ─── recovery verification ───
-async function verifyRecovery() {
-  log('watchdog: verifying recovery...');
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    if (server.child && server.child.exitCode !== null) {
-      // Still crashing — escalate to next tier
-      log('watchdog: recovery failed — still crashing');
-      return false;
-    }
-    if (await httpProbeReady(settings.host, settings.port, 2000)) {
-      log('watchdog: recovery verified — service is healthy');
-      clearCrashReport();
-      consecutiveFailures = 0;
-      crashTier = 0; // next crash episode starts from Level 1 again
-      watchdogState = 'healthy';
-      cleanupOverlayAfterSuccess();
-      notifyWatchdogState();
-      return true;
-    }
-    await new Promise((r) => setTimeout(r, 1000));
-  }
-  log('watchdog: recovery timeout');
-  return false;
-}
-
-// ─── pre-flight validation ───
-function preflightCheck() {
-  const errors = [];
-  const home = app.getPath('home');
-  const patchFile = path.join(home, '.dsh', 'profiles', 'web', 'cordis.patch.yml');
-  const nmDirs = [
-    path.join(home, '.dsh', 'profiles', 'node_modules'),
-    path.join(home, '.dsh', 'profiles', 'web', 'node_modules'),
-  ];
-  try {
-    const text = fs.readFileSync(patchFile, 'utf8');
-    const nameMatches = [...text.matchAll(/name:\s*['"]([^'"]+)['"]/g)];
-    for (const m of nameMatches) {
-      const name = m[1];
-      let found = false;
-      for (const nm of nmDirs) {
-        const pkgPath = path.join(nm, name, 'package.json');
-        if (fs.existsSync(pkgPath)) {
-          found = true;
-          try {
-            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-            if (!pkg.type || pkg.type !== 'module') {
-              errors.push(`${name}: 缺少 "type":"module"`);
-            }
-            if (!pkg.exports) {
-              errors.push(`${name}: 缺少 exports 配置`);
-            }
-          } catch (e) {
-            errors.push(`${name}: package.json 解析失败: ${e.message}`);
-          }
-          break;
-        }
-      }
-      if (!found) errors.push(`${name}: 在 node_modules 中找不到`);
-    }
-  } catch (err) {
-    errors.push(`读取 cordis.patch.yml 失败: ${err.message}`);
-  }
-  return errors;
-}
-
 // ------------------------------------------------------------------- probing ----
 function tcpProbe(host, port, timeoutMs = 1200) {
   return new Promise((resolve) => {
@@ -610,7 +125,41 @@ const server = {
   port: null,
   stdoutTail: [],
   stderrTail: [],
+  // anti-crash state (in-memory mirror of ~/.dsh/crash-state.json)
+  crash: {
+    consecutive: 0,     // 连续非外部崩溃次数（进入安全模式的依据）
+    recent: [],         // 最近崩溃时间戳（60s 滑动窗口，用于冷却/防风暴）
+    cooldownUntil: 0,   // 冷却截止时间戳（防重启风暴）
+    lastCause: null,    // 上一次崩溃归因
+    safeMode: false,    // 是否处于安全模式
+    probeFails: 0,      // watchdog 连续探活失败计数
+    watchdogKill: false, // watchdog 主动 kill 标记（强制按 runtime 恢复）
+  },
+  manualStop: false,    // 手动停止/重启中（抑制 exit 自动恢复）
 };
+
+function crashStateFile() {
+  return path.join(app.getPath('home'), '.dsh', 'crash-state.json');
+}
+
+function loadCrashState() {
+  try {
+    return JSON.parse(fs.readFileSync(crashStateFile(), 'utf8'));
+  } catch {
+    return { crashes: [], safeMode: false };
+  }
+}
+
+function saveCrashState(patch) {
+  const state = loadCrashState();
+  Object.assign(state, patch);
+  try {
+    fs.mkdirSync(path.dirname(crashStateFile()), { recursive: true });
+    fs.writeFileSync(crashStateFile(), JSON.stringify(state, null, 2));
+  } catch (e) {
+    log('save crash-state failed: ' + e.message);
+  }
+}
 
 function tail(arr, line) {
   arr.push(line);
@@ -703,6 +252,7 @@ function ensureDshCli() {
 
 function stopServer() {
   return new Promise((resolve) => {
+    server.manualStop = true; // 手动停止中：exit 回调不触发自动恢复
     const child = server.child;
     if (!child || child.exitCode !== null) {
       server.child = null;
@@ -739,6 +289,7 @@ async function startServer() {
     return;
   }
   if (server.status === 'starting') return;
+  server.manualStop = false; // 新启动流程：启动失败也要能触发自动恢复
 
   server.stdoutTail = [];
   server.stderrTail = [];
@@ -755,10 +306,7 @@ async function startServer() {
     setServerStatus('error', '未找到 DSH CLI（@deepseek-ai/dsh/lib/bin.js）。首次启动会自动下载，请检查网络后点「重试」；也可以在设置中指定 dshCliPath');
     return;
   }
-  const spawnArgs = [cli, '--profile', 'web', '--host', settings.host, '--port', String(settings.port)];
-  // Add --patch overlay for watchdog-disabled plugins (never touches patch.yml)
-  spawnArgs.push(...getPatchArgs());
-  log(`spawning: ${node} ${spawnArgs.join(' ')}`);
+  log(`spawning: ${node} ${cli} --profile web --host ${settings.host} --port ${settings.port}`);
   // Release any leftover listener on the port first — accumulated zombie dsh
   // processes from earlier sessions otherwise crash the fresh spawn with
   // EADDRINUSE (the recurring "dsh exited code=1" startup error).
@@ -766,7 +314,7 @@ async function startServer() {
   await new Promise((r) => setTimeout(r, 300));
   // detached: the DSH service runs in its own process group, so restarting the
   // desktop app no longer takes the service (and the hosted session) down with it.
-  const child = spawn(node, spawnArgs, {
+  const child = spawn(node, [cli, '--profile', 'web', '--host', settings.host, '--port', String(settings.port)], {
     cwd: path.dirname(cli),
     env: {
       ...process.env,
@@ -781,24 +329,34 @@ async function startServer() {
   child.unref(); // the app does not keep the service alive nor wait for it
   server.child = child;
   server.startedByUs = true;
-  serviceStartTime = Date.now(); // watchdog cooldown baseline
 
   child.stdout.on('data', (buf) => {
     for (const line of buf.toString('utf8').split(/\r?\n/)) if (line.trim()) { log('[dsh] ' + line); tail(server.stdoutTail, line); }
   });
   child.stderr.on('data', (buf) => {
-    for (const line of buf.toString('utf8').split(/\r?\n/)) handleStderrLine(line);
+    for (const line of buf.toString('utf8').split(/\r?\n/)) if (line.trim()) { log('[dsh:err] ' + line); tail(server.stderrTail, line); }
   });
   child.once('error', (err) => {
     log('failed to spawn dsh: ' + err.message);
     setServerStatus('error', '启动 DSH 服务失败: ' + err.message);
   });
   child.once('exit', (code, signal) => {
-    log(`dsh exited code=${code} signal=${signal}`);
+    let cause = classifyCrash(code, signal);
+    // watchdog 主动 kill：强制按运行期崩溃走自动恢复（避免被归为 external）
+    if (server.crash.watchdogKill) {
+      server.crash.watchdogKill = false;
+      cause = 'runtime';
+      log('[anticrash] exit follows watchdog kill — forcing recovery');
+    }
+    log(`dsh exited code=${code} signal=${signal} cause=${cause}`);
+    server.exitCause = cause;
     if (server.status === 'starting' || server.status === 'running') {
-      setServerStatus('stopped', `dsh 进程退出 (code=${code})`);
+      setServerStatus('stopped', `dsh 进程退出 (code=${code}, cause=${cause})`);
     }
     server.child = null;
+    const prev = server.manualStop;
+    // 手动停止（stopServer 已置位）仍由恢复调度检查；本回调只记录
+    handleCrash(cause, prev);
   });
 
   // wait until the HTTP root answers 200 (or the child dies / timeout)
@@ -806,10 +364,14 @@ async function startServer() {
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
       setServerStatus('error', 'dsh 进程提前退出，详见日志');
+      restartBreaker.record(false);
       return;
     }
     if (await httpProbeReady(settings.host, settings.port)) {
       server.port = settings.port;
+      server.manualStop = false;
+      resetCrashMeters();
+      restartBreaker.record(true);
       setServerStatus('running');
       log('DSH service ready at ' + webUrl(settings.host, settings.port));
       return;
@@ -866,27 +428,217 @@ function releasePort(port) {
   });
 }
 
-async function restartServer() {
-  // Pre-flight validation: catch config errors before they crash the service
-  const errors = preflightCheck();
-  if (errors.length > 0) {
-    const msg = '预检失败，未重启：\n' + errors.join('\n');
-    log('preflight failed: ' + errors.join('; '));
-    setServerStatus('error', msg);
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('dsh:server-status', { status: 'error', detail: msg });
+// ------------------------------------------------------------- anti-crash ----
+// 崩溃归因 → 指数退避自动重启 → 防风暴冷却 → 连续失败自动安全模式。
+// 对应 docs/anti-crash-optimization.md 的 L1 进程守护层。
+
+let autoRecoveryTimer = null;
+let watchdogTimer = null;
+let isRecovering = false;
+
+/** 根据退出码/signal/stderr 尾部判断崩溃原因。 */
+function classifyCrash(code, signal) {
+  if (signal === 'SIGTERM' || signal === 'SIGKILL') return 'external'; // 外部/主动终止
+  const err = server.stderrTail.join('\n').toLowerCase();
+  if (/EADDRINUSE|address already in use|listen eacces/i.test(err)) return 'port_conflict';
+  if (/heap out of memory|allocation failed|javascript heap|out of memory/i.test(err)) return 'oom';
+  if (/(error|exception|stack)[\s\S]{0,200}/i.test(err) && /(error:|at \S+\.js|\.mjs|\.cjs)/i.test(err)) return 'plugin_crash';
+  if (code !== 0) return code === null ? 'unknown' : 'runtime';
+  return code === 0 ? 'clean' : 'unknown';
+}
+
+/** 记录一次崩溃（持久化到 crash-state.json，保留最近 50 条）。 */
+function recordCrash(cause) {
+  const now = Date.now();
+  server.crash.lastCause = cause;
+  server.crash.consecutive = cause === 'external' || cause === 'clean' ? 0 : server.crash.consecutive + 1;
+  server.crash.recent = server.crash.recent.filter((t) => now - t < 60_000);
+  if (cause !== 'external' && cause !== 'clean') server.crash.recent.push(now);
+  let saved = loadCrashState();
+  const list = Array.isArray(saved.crashes) ? saved.crashes : [];
+  list.push({ at: new Date().toISOString(), cause, consecutive: server.crash.consecutive });
+  while (list.length > 50) list.shift();
+  saveCrashState({ crashes: list, safeMode: server.crash.safeMode });
+  log(`[anticrash] cause=${cause} consecutive=${server.crash.consecutive} recent60=${server.crash.recent.length}`);
+}
+
+/** 手动进入安全模式（禁非核心插件，不重启；重启由调用方负责）。 */
+function enterSafeMode() {
+  const patchFile = path.join(app.getPath('home'), '.dsh', 'profiles', 'web', 'cordis.patch.yml');
+  const backupFile = patchFile + '.backup';
+  try {
+    if (fs.existsSync(patchFile)) fs.copyFileSync(patchFile, backupFile);
+    const content = disableNonCorePlugins(fs.readFileSync(patchFile, 'utf8'));
+    fs.writeFileSync(patchFile, content);
+    server.crash.safeMode = true;
+    safeModeActive = true;
+    saveCrashState({ safeMode: true });
+    updateTray();
+    log('[anticrash] safe mode activated (non-core plugins disabled)');
+  } catch (e) {
+    log('[anticrash] enterSafeMode failed: ' + e.message);
+  }
+}
+
+/** 自动恢复调度：指数退避 + 冷却 + 自动安全模式。 */
+function handleCrash(cause, wasManualStop) {
+  // 手动停止/退出/非本应用启动的服务 → 先抑制再记录（不污染崩溃统计）
+  if (wasManualStop || server.manualStop || isQuitting || !server.startedByUs) {
+    log(`[anticrash] suppress auto-recovery (manual=${!!(wasManualStop || server.manualStop)}, quit=${isQuitting}, owned=${!!server.startedByUs})`);
+    return;
+  }
+  recordCrash(cause);
+  if (cause === 'external' || cause === 'clean') return;
+
+  const now = Date.now();
+  // 冷却期内 → 不再重启（防重启风暴）
+  if (now < server.crash.cooldownUntil) {
+    const left = Math.ceil((server.crash.cooldownUntil - now) / 1000);
+    log(`[anticrash] cooling down (${left}s), skip auto-restart`);
+    setServerStatus('error', `服务连续崩溃，冷却中（${left}s），请稍候或手动重启`);
+    return;
+  }
+  // 60s 内 ≥3 次真实崩溃 → 冷却 + 自动安全模式（配置问题隔离）
+  if (server.crash.recent.length >= 3) {
+    server.crash.cooldownUntil = now + 120_000;
+    log('[anticrash] >=3 crashes in 60s — entering cooldown 120s');
+    if (!server.crash.safeMode && cause !== 'port_conflict') {
+      enterSafeMode();
+      log('[anticrash] restarting with safe mode to isolate broken plugin');
+      // 延迟重启：给可能的进行中恢复流程收尾，避免 isRecovering 吞掉本次重启
+      setTimeout(() => {
+        if (!isRecovering) restartServer();
+      }, 1500);
+    } else {
+      setServerStatus('error', '连续崩溃，已进入冷却（120s），请稍后重试');
     }
     return;
   }
+  // 指数退避 1s/2s/4s/8s…上限 60s
+  const backoffMs = Math.min(1000 * Math.pow(2, Math.max(0, server.crash.recent.length - 1)), 60_000);
+  log(`[anticrash] auto-restart in ${backoffMs}ms (cause=${cause})`);
+  if (autoRecoveryTimer) clearTimeout(autoRecoveryTimer);
+  autoRecoveryTimer = setTimeout(() => {
+    log('[anticrash] executing auto-restart');
+    restartServer();
+  }, backoffMs);
+}
+
+/** watchdog：服务 running 后周期性探活，僵死则 kill 触发自动恢复。 */
+function startWatchdog() {
+  if (watchdogTimer) clearInterval(watchdogTimer);
+  watchdogTimer = setInterval(async () => {
+    if (server.status !== 'running' || !server.child || isRecovering) return;
+    const ok = await httpProbeReady(settings.host, settings.port, 3000);
+    if (!ok) {
+      server.crash.probeFails = (server.crash.probeFails || 0) + 1;
+      log(`[watchdog] probe fail ${server.crash.probeFails}/3`);
+      if (server.crash.probeFails >= 3) {
+        server.crash.probeFails = 0;
+        log('[watchdog] service unresponsive — killing child to trigger recovery');
+        try {
+          server.child.kill();
+          server.crash.watchdogKill = true; // kill 成功后才标记，exit 异步触发
+        } catch (e) { log('[watchdog] kill failed: ' + e.message); }
+      }
+    } else {
+      server.crash.probeFails = 0;
+    }
+  }, 5000);
+}
+
+// ---- P2: 熔断器 + 限流（对应 L3 依赖隔离层） ----
+function createCircuitBreaker(name, { failThreshold = 0.5, requestThreshold = 5, openMs = 15_000, windowMs = 60_000 } = {}) {
+  const state = { status: 'CLOSED', results: [], openedAt: 0 }; // results: [{ts, ok}]
+  const slide = (now) => {
+    state.results = state.results.filter((r) => now - r.ts <= windowMs);
+  };
+  return {
+    get status() { return state.status; },
+    allow() {
+      if (state.status === 'OPEN') {
+        if (Date.now() - state.openedAt >= openMs) { state.status = 'HALF_OPEN'; return true; }
+        return false;
+      }
+      return true;
+    },
+    record(ok) {
+      const now = Date.now();
+      if (state.status === 'HALF_OPEN') {
+        // 半开试探：成功→关闭，失败→重新断开
+        state.status = ok ? 'CLOSED' : 'OPEN';
+        state.openedAt = now;
+        state.results = [];
+        log(`[breaker] ${name} ${ok ? 'CLOSED' : 'OPEN (half-open probe failed)'}`);
+        return;
+      }
+      slide(now);
+      state.results.push({ ts: now, ok });
+      const total = state.results.length;
+      if (total >= requestThreshold) {
+        const fails = state.results.filter((r) => !r.ok).length;
+        if (fails / total >= failThreshold) {
+          state.status = 'OPEN';
+          state.openedAt = now;
+          state.results = [];
+          log(`[breaker] ${name} -> OPEN (fail=${fails}/${total})`);
+        }
+      }
+    },
+    reset() { state.status = 'CLOSED'; state.results = []; },
+  };
+}
+
+function createRateLimiter(maxPerWindow, windowMs) {
+  const hits = [];
+  return {
+    allow() {
+      const now = Date.now();
+      while (hits.length && now - hits[0] > windowMs) hits.shift();
+      if (hits.length >= maxPerWindow) {
+        return { ok: false, reason: '操作过于频繁，请稍后再试' };
+      }
+      hits.push(now);
+      return { ok: true };
+    },
+  };
+}
+
+// 自动恢复熔断器：连续重启仍失败则 OPEN，阻止无限重启
+const restartBreaker = createCircuitBreaker('auto-restart', { failThreshold: 0.4, requestThreshold: 3, openMs: 60_000 });
+// session-tools /restart 端点的限流：60s 内最多 3 次
+const rateLimiterRestart = createRateLimiter(3, 60_000);
+
+function resetCrashMeters() {
+  server.crash.consecutive = 0;
+  server.crash.recent = [];
+  server.crash.probeFails = 0;
+  server.manualStop = false;
+}
+
+async function restartServer() {
   log('restart requested');
-  backupSession('pre-restart'); // safety net: snapshot the conversation first
-  clearCrashReport(); // fresh start
-  await stopServer();
-  await releasePort(settings.port);
-  await new Promise((r) => setTimeout(r, 600));
-  await startServer();
-  if (mainWindow && dshView && server.status === 'running') {
-    dshView.webContents.loadURL(webUrl(settings.host, server.port));
+  if (isRecovering) return;
+  if (!restartBreaker.allow()) {
+    log('[breaker] auto-restart OPEN — skipping restart, waiting for cooldown');
+    setServerStatus('error', '自动恢复已熔断，请稍后手动处理');
+    return;
+  }
+  isRecovering = true;
+  try {
+    backupSession('pre-restart'); // safety net: snapshot the conversation first
+    await stopServer();
+    await releasePort(settings.port);
+    await new Promise((r) => setTimeout(r, 600));
+    await startServer(); // startServer 内部记录 restartBreaker 成功/失败
+    if (mainWindow && dshView && server.status === 'running') {
+      dshView.webContents.loadURL(webUrl(settings.host, server.port));
+    }
+  } catch (e) {
+    log('restart failed: ' + e.message);
+    restartBreaker.record(false);
+  } finally {
+    isRecovering = false;
   }
 }
 
@@ -914,39 +666,18 @@ function loadingHtml() {
   .dot { width:22px; height:22px; border-radius:50%; background:#4d6bfe; animation:pulse 1.2s infinite; }
   @keyframes pulse { 0%,100%{opacity:.35; transform:scale(.9)} 50%{opacity:1; transform:scale(1.15)} }
   h1 { font-size:16px; font-weight:600; margin:0; }
-  p  { font-size:13px; margin:0; color:#cfd3d6; text-align:center; max-width:520px; line-height:1.6; white-space:pre-wrap; }
+  p  { font-size:13px; margin:0; color:#cfd3d6; text-align:center; max-width:520px; line-height:1.6; }
   button { margin-top:6px; padding:8px 22px; border:1px solid #4d6bfe; border-radius:6px; background:transparent;
            color:#8fa3ff; font-size:13px; cursor:pointer; }
   button:hover { background:#1c2547; }
   .err { color:#ff7b72; }
-  .warn { color:#e8c88a; }
-  #watchdog-banner { display:none; border:1px solid #8a6d1f; background:#2a2410; padding:10px 16px; border-radius:8px;
-                     max-width:560px; font-size:13px; line-height:1.6; }
 </style></head>
 <body>
   <div class="dot" id="dot"></div>
   <h1 id="title">正在启动 DeepSeek Harness 服务…</h1>
   <p id="detail"></p>
-  <div id="watchdog-banner" class="warn"></div>
   <button id="retry" style="display:none">重试</button>
   <script>
-    function renderWatchdog(w) {
-      const banner = document.getElementById('watchdog-banner');
-      if (!banner) return;
-      if (w.state === 'safe-mode') {
-        banner.style.display = 'block';
-        banner.textContent = '🛡 安全模式 — 自定义插件已全部禁用，仅保留核心功能';
-      } else if (w.state === 'crashed' && w.disabledCount > 0) {
-        banner.style.display = 'block';
-        banner.textContent = '⚠ 检测到插件崩溃，已自动禁用: ' + w.disabledPlugins.join('、');
-      } else if (w.disabledCount > 0) {
-        banner.style.display = 'block';
-        banner.textContent = '⚠ 已禁用插件: ' + w.disabledPlugins.join('、') + '（修复后可经托盘菜单重新启用）';
-      } else {
-        banner.style.display = 'none';
-      }
-    }
-    window.dshDesktop.onWatchdog(renderWatchdog);
     window.dshDesktop.onServerStatus((s) => {
       const dot = document.getElementById('dot');
       const title = document.getElementById('title');
@@ -954,21 +685,11 @@ function loadingHtml() {
       const retry = document.getElementById('retry');
       if (s.status === 'running') {
         title.textContent = '服务已就绪，正在打开…';
-        title.className = '';
         dot.style.display = 'none';
       } else if (s.status === 'error' || s.status === 'stopped') {
-        const d = s.detail || '';
-        if (d.includes('已自动禁用')) {
-          title.textContent = '⚠ 插件导致崩溃，已自动禁用';
-          title.className = 'warn';
-        } else if (d.includes('安全模式')) {
-          title.textContent = '🛡 安全模式';
-          title.className = 'warn';
-        } else {
-          title.textContent = s.status === 'error' ? '服务启动失败' : '服务未运行';
-          title.className = 'err';
-        }
-        detail.textContent = d;
+        title.textContent = s.status === 'error' ? '服务启动失败' : '服务未运行';
+        title.className = 'err';
+        detail.textContent = s.detail || '';
         retry.style.display = 'inline-block';
       } else {
         detail.textContent = s.detail ? '正在 ' + s.detail : '';
@@ -1075,18 +796,83 @@ function updateTray() {
   tray.setContextMenu(buildMenu());
 }
 
+
+// ─── Safe Mode / Restore Mode ───
+let safeModeActive = false;
+
+function disableNonCorePlugins(content) {
+  const coreIds = ['dsh-skin-switch', 'dsh-session-tools', 'dsh-persona-manager', 'dsh-memory'];
+  const lines = content.split('\n');
+  const result = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.trim() === '- insert:') {
+      const block = [line];
+      i++;
+      let id = null;
+      let nameLineIndex = -1;
+      let alreadyDisabled = false;
+      while (i < lines.length && (lines[i].startsWith(' ') || lines[i].startsWith('\t') || lines[i].trim() === '')) {
+        block.push(lines[i]);
+        const idMatch = lines[i].match(/^\s+- id:\s*(.+)$/);
+        if (idMatch) id = idMatch[1].trim();
+        if (lines[i].match(/^\s+name:/)) nameLineIndex = block.length - 1;
+        if (/^\s+disabled:\s*true\s*$/.test(lines[i])) alreadyDisabled = true;
+        i++;
+      }
+      // 幂等：块内已有 disabled: true 则不重复插入（YAML 重复键是脏数据）
+      if (id && !coreIds.includes(id) && nameLineIndex >= 0 && !alreadyDisabled) {
+        const nameLine = block[nameLineIndex];
+        const indent = nameLine.match(/^(\s*)/)[1];
+        block.splice(nameLineIndex + 1, 0, indent + '      disabled: true');
+      }
+      result.push(...block);
+    } else {
+      result.push(line);
+      i++;
+    }
+  }
+  return result.join('\n');
+}
+
+function handleSafeMode() {
+  const patchFile = path.join(app.getPath('home'), '.dsh', 'profiles', 'web', 'cordis.patch.yml');
+  const backupFile = patchFile + '.backup';
+  try {
+    if (fs.existsSync(patchFile)) {
+      fs.copyFileSync(patchFile, backupFile);
+    }
+    let content = fs.readFileSync(patchFile, 'utf8');
+    content = disableNonCorePlugins(content);
+    fs.writeFileSync(patchFile, content);
+    safeModeActive = true;
+    server.crash.safeMode = true;
+    saveCrashState({ safeMode: true });
+    restartServer();
+  } catch (e) {
+    console.error('Safe mode failed:', e);
+  }
+}
+
+function clearDisabledOverlay() {
+  const patchFile = path.join(app.getPath('home'), '.dsh', 'profiles', 'web', 'cordis.patch.yml');
+  const backupFile = patchFile + '.backup';
+  try {
+    if (fs.existsSync(backupFile)) {
+      fs.copyFileSync(backupFile, patchFile);
+    }
+    safeModeActive = false;
+    server.crash.safeMode = false;
+    saveCrashState({ safeMode: false });
+    restartServer();
+  } catch (e) {
+    console.error('Restore failed:', e);
+  }
+}
+
 function buildMenu() {
   const url = webUrl(settings.host, server.port || settings.port);
-  const wd = getWatchdogStatus();
-  const wdLabel = {
-    idle: '未启动',
-    cooldown: '启动冷却',
-    healthy: '正常运行',
-    crashed: '已崩溃',
-    recovering: '恢复中',
-    'safe-mode': '🛡 安全模式',
-  }[wd.state] || wd.state;
-  const disabledLabel = wd.disabledCount > 0 ? wd.disabledPlugins.join(', ') : '无';
   return Menu.buildFromTemplate([
     { label: server.status === 'running' ? '显示主窗口' : '打开主窗口', click: showMainWindow },
     { label: '在浏览器中打开', click: () => shell.openExternal(url) },
@@ -1095,8 +881,8 @@ function buildMenu() {
     { label: '开机自启', type: 'checkbox', checked: !!settings.autoStart, click: (item) => applyAutoStart(item.checked) },
     { type: 'separator' },
     { label: '--- 恢复工具 ---', enabled: false },
-    { label: safeModeActive ? '🛡 安全模式（当前）' : '启动安全模式', enabled: !safeModeActive, click: async () => { await handleSafeMode(); } },
-    { label: '恢复正常模式', click: () => { clearDisabledOverlay(); safeModeActive = false; notifyWatchdogState(); restartServer(); } },
+    { label: safeModeActive ? '🛡 安全模式（当前）' : '启动安全模式', enabled: !safeModeActive, click: () => handleSafeMode() },
+    { label: '恢复正常模式', click: () => { clearDisabledOverlay(); restartServer(); } },
     { type: 'separator' },
     { label: '退出', click: () => quitApp() },
   ]);
@@ -1312,11 +1098,40 @@ function startSessionToolsServer() {
       send({ ok: true });
     } else if (pathname === '/restart') {
       // Trigger a clean DSH service restart (same as tray menu "重启 DSH 服务").
-      // Returns immediately; the restart runs asynchronously in the main process.
+      // Rate-limited: avoid restart loops when the GUI repeatedly fires it.
+      const rl = rateLimiterRestart.allow();
+      if (!rl.ok) {
+        send({ ok: false, error: rl.reason }, 429);
+        return;
+      }
       send({ ok: true, message: '正在重启 DSH 服务…' });
       setTimeout(() => restartServer(), 200);
     } else if (pathname === '/health') {
-      send({ ok: true });
+      // 三层健康探针（K8s 风格）：liveness / readiness / metrics
+      const probe = new URL(req.url || '/', 'http://x').searchParams.get('probe') || 'liveness';
+      if (probe === 'readiness') {
+        send({ ok: server.status === 'running', status: server.status, safeMode: server.crash.safeMode });
+      } else if (probe === 'metrics') {
+        const mem = process.memoryUsage();
+        send({
+          ok: true,
+          status: server.status,
+          uptime: Math.round(process.uptime()),
+          memory: { rss: mem.rss, heapUsed: mem.heapUsed, heapTotal: mem.heapTotal },
+          childAlive: !!(server.child && server.child.exitCode === null),
+          crash: {
+            consecutive: server.crash.consecutive,
+            recent60: server.crash.recent.length,
+            lastCause: server.crash.lastCause,
+            safeMode: server.crash.safeMode,
+            cooldownUntil: server.crash.cooldownUntil,
+            breakerOpen: restartBreaker.status === 'OPEN',
+          },
+        });
+      } else {
+        // liveness：真实探活 DSH 服务（连接已有服务时 server.child 为 null，不能依赖 child 对象）
+        httpProbeReady(settings.host, settings.port, 2000).then((ok) => send({ ok }));
+      }
     } else if (pathname === '/dom') {
       // Diagnostic: run a read-only JS snippet in the live GUI page and return
       // the result (used to inspect the workspace-tree panel state remotely).
@@ -1430,7 +1245,27 @@ if (!gotLock) {
     startSkinPolling();
     startSessionBackup();
     startSessionToolsServer();
-    // startWatchdog(); // disabled — use safe mode tray button instead
+    // 恢复上次会话的崩溃状态（含安全模式）与熔断器
+    try {
+      const cs = loadCrashState();
+      server.crash.safeMode = !!cs.safeMode;
+      safeModeActive = !!cs.safeMode;
+      server.crash.consecutive = 0;
+      if (cs.crashes && cs.crashes.length > 0) {
+        const last = cs.crashes[cs.crashes.length - 1];
+        server.crash.lastCause = last.cause || null;
+        // 仅当最近一次崩溃在 60s 内才视为"延续中的崩溃"，保守防风暴
+        const lastTs = Date.parse(last.at || '');
+        if (!Number.isNaN(lastTs) && Date.now() - lastTs < 60_000) {
+          server.crash.consecutive = 1;
+          log('[anticrash] last crash was <60s ago — will use shorter backoff');
+        }
+        log(`[anticrash] restored crash state: ${cs.crashes.length} crashes total, last=${server.crash.lastCause}, safeMode=${safeModeActive}`);
+      }
+      // 上次退出时处于安全模式 → 提示而非静默重启风暴
+      if (safeModeActive) log('[anticrash] service is in SAFE MODE (restored from last session)');
+    } catch (e) { log('[anticrash] restore crash state failed: ' + e.message); }
+    startWatchdog(); // L1 watchdog：运行期探活 + 僵死恢复
     log(`started. userData=${app.getPath('userData')}`);
   });
 
@@ -1449,7 +1284,6 @@ async function quitApp() {
   if (isQuitting) return;
   isQuitting = true;
   log('quitting');
-  stopWatchdog();
   if (server.startedByUs && !settings.keepServerOnQuit) {
     await stopServer();
   }

@@ -69,7 +69,7 @@ window.__ModuleLoader__.load({
         '.mmv2-btn-del{color:#ff7b72;border-color:#ff7b7266}',
         '.mmv2-btn-del:hover{background:#ff7b7218}',
         '.mmv2-virtual-spacer{}',
-        '.mmv2-group-header{display:flex;align-items:center;gap:6px;padding:6px 8px;margin:4px 0 2px;font-size:11px;font-weight:600;color:var(--dsw-alias-label-secondary,#aaa);border-bottom:1px solid var(--dsw-alias-border-l1,#333);position:sticky;top:0;background:var(--dsw-alias-bg-layer-0,#0e0e10);z-index:1}',
+        '.mmv2-group-header{display:flex;align-items:center;gap:6px;padding:6px 8px;margin:8px 0 4px;font-size:11px;font-weight:600;color:var(--dsw-alias-label-secondary,#aaa);border-bottom:1px solid var(--dsw-alias-border-l1,#333);background:transparent}',
         '.mmv2-group-dot{width:8px;height:8px;border-radius:50%;flex:none}',
         '.mmv2-group-count{font-size:10px;color:var(--dsw-alias-label-tertiary,#666);margin-left:auto}',
         '.mmv2-toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:8px 18px;border-radius:8px;font-size:12px;background:var(--dsw-alias-bg-layer-2,#222);border:1px solid var(--dsw-alias-border-l1,#333);color:var(--dsw-alias-label-primary,#eee);z-index:9999;animation:mmv2-fade .25s}',
@@ -132,107 +132,51 @@ window.__ModuleLoader__.load({
       );
     }
 
-    // ── 虚拟滚动列表组件 ──
-    // 只渲染可见区域的卡片，避免大量 DOM 节点导致性能问题
-    var CARD_HEIGHT = 90;
-    var HEADER_HEIGHT = 32; // 每个卡片的预估高度（px）
-    var BUFFER_COUNT = 5; // 可见区域外额外渲染的卡片数量
-
-    function MemoryVirtualList(props) {
+    // ── 简单列表组件 ──
+    // 直接渲染所有卡片与分组头（记忆数量有限，无需虚拟滚动）
+    function MemoryList(props) {
       var items = props.items, selectedId = props.selectedId, onSelect = props.onSelect, grouped = props.grouped;
-      var containerRef = React.useRef(null);
-      var _a = React.useState(0), scrollTop = _a[0], setScrollTop = _a[1];
-      var _b = React.useState(400), containerHeight = _b[0], setContainerHeight = _b[1];
-
-      // 监听滚动事件
-      var onScroll = React.useCallback(function (e) {
-        setScrollTop(e.target.scrollTop);
-      }, []);
-
-      // 监听容器尺寸变化
-      React.useEffect(function () {
-        var el = containerRef.current;
-        if (!el) return;
-        setContainerHeight(el.clientHeight);
-        var observer = new ResizeObserver(function (entries) {
-          for (var i = 0; i < entries.length; i++) {
-            setContainerHeight(entries[i].contentRect.height);
-          }
-        });
-        observer.observe(el);
-        return function () { observer.disconnect(); };
-      }, []);
-
-      // 计算可见范围
       var listItems = grouped && grouped.length > 0 ? grouped : items.map(function(m){ return {type:'item', item:m}; });
-      var totalHeight = listItems.reduce(function(s,e){ return s + (e.type === 'header' ? HEADER_HEIGHT : CARD_HEIGHT); }, 0);
-      // Calculate visible range
-      var acc = 0, startIndex = 0, endIndex = listItems.length;
-      for (var i = 0; i < listItems.length; i++) {
-        var h = listItems[i].type === 'header' ? HEADER_HEIGHT : CARD_HEIGHT;
-        if (acc + h > scrollTop - BUFFER_COUNT * CARD_HEIGHT && startIndex === 0) startIndex = i;
-        acc += h;
-        if (acc > scrollTop + containerHeight + BUFFER_COUNT * CARD_HEIGHT) { endIndex = i + 1; break; }
-      }
-      var visibleItems = listItems.slice(startIndex, endIndex);
-      var offsetY = listItems.slice(0, startIndex).reduce(function(s,e){ return s + (e.type === 'header' ? HEADER_HEIGHT : CARD_HEIGHT); }, 0);
-      var offsetY = startIndex * CARD_HEIGHT;
 
       // 当选中项变化时，滚动到选中项
       React.useEffect(function () {
-        if (!selectedId || !containerRef.current) return;
-        var idx = items.findIndex(function (m) { return m.id === selectedId; });
-        if (idx < 0) return;
-        var itemTop = idx * CARD_HEIGHT;
-        var itemBottom = itemTop + CARD_HEIGHT;
-        var el = containerRef.current;
-        if (itemTop < el.scrollTop) {
-          el.scrollTop = itemTop;
-        } else if (itemBottom > el.scrollTop + el.clientHeight) {
-          el.scrollTop = itemBottom - el.clientHeight;
-        }
+        if (!selectedId) return;
+        var target = document.querySelector('[data-memory-id="' + selectedId + '"]');
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }, [selectedId]);
 
-      // 只有这一个容器有 overflow-y:auto，是唯一的滚动条
       return React.createElement('div', {
-        ref: containerRef,
-        style: { flex: 1, overflowY: 'auto', minHeight: 0, maxHeight: '100%', padding: '6px' }
+        style: { flex: 1, overflowY: 'auto', minHeight: 0, maxHeight: '100%', padding: '4px 6px' }
       },
-        React.createElement('div', {
-          className: 'mmv2-virtual-spacer',
-          style: { height: totalHeight + 'px', position: 'relative' }
-        },
-          React.createElement('div', {
-            style: { position: 'absolute', top: offsetY + 'px', left: 0, right: 0 }
-          },
-            visibleItems.map(function (entry) {
-              if (entry.type === 'header') {
-                var cat = CATEGORIES[entry.category] || { icon: '?', label: entry.category, color: '#888' };
-                return React.createElement('div', { key: 'h-' + entry.category, className: 'mmv2-group-header' },
-                  React.createElement('span', { className: 'mmv2-group-dot', style: { backgroundColor: cat.color } }),
-                  cat.icon + ' ' + cat.label,
-                  React.createElement('span', { className: 'mmv2-group-count' }, entry.count));
-              }
-              var m = entry.item;
-              return React.createElement(MemoryCard, {
-                key: m.id,
-                m: m,
-                active: m.id === selectedId,
-                onClick: function () { onSelect(m.id); }
-              });
-            })
-          )
-        )
+        listItems.map(function (entry) {
+          if (entry.type === 'header') {
+            var cat = CATEGORIES[entry.category] || { icon: '?', label: entry.category, color: '#888' };
+            return React.createElement('div', { key: 'h-' + entry.category, className: 'mmv2-group-header' },
+              React.createElement('span', { className: 'mmv2-group-dot', style: { backgroundColor: cat.color } }),
+              cat.icon + ' ' + cat.label,
+              React.createElement('span', { className: 'mmv2-group-count' }, entry.count));
+          }
+          var m = entry.item;
+          return React.createElement(MemoryCard, {
+            key: m.id,
+            m: m,
+            active: m.id === selectedId,
+            onClick: function () { onSelect(m.id); },
+            'data-memory-id': m.id
+          });
+        })
       );
     }
 
     function MemoryCard(props) {
       var m = props.m, active = props.active, onClick = props.onClick;
+      var memId = props['data-memory-id'];
       var cat = CATEGORIES[m.category] || { icon: '?', label: m.category, color: '#888' };
       var preview = m.content.length > 100 ? m.content.slice(0, 100) + '...' : m.content;
       return React.createElement('div', {
         className: 'mmv2-card' + (active ? ' mmv2-card-active' : ''),
-        onClick: onClick
+        onClick: onClick,
+        'data-memory-id': memId
       },
         React.createElement('div', { className: 'mmv2-card-top' },
           React.createElement('span', {
@@ -378,7 +322,7 @@ window.__ModuleLoader__.load({
             React.createElement('div', { className: 'mmv2-list-scroll' },
               filtered.length === 0
                 ? React.createElement('div', { className: 'mmv2-empty' }, React.createElement('div', { className: 'mmv2-empty-icon' }, '\uD83D\uDCDD'), '\u6682\u65E0\u8BB0\u5FC6')
-                : React.createElement(MemoryVirtualList, { items: filtered, selectedId: selectedId, onSelect: onSelect, grouped: grouped }))),
+                : React.createElement(MemoryList, { items: filtered, selectedId: selectedId, onSelect: onSelect, grouped: grouped }))),
           selected && editDraft
             ? React.createElement(MemoryEditor, { memory: editDraft, onSave: onSave, onDelete: onDelete, onChange: onDraftChange })
             : React.createElement('div', { className: 'mmv2-empty' }, React.createElement('div', { className: 'mmv2-empty-icon' }, '\uD83D\uDC40'), '\u9009\u62E9\u4E00\u6761\u8BB0\u5FC6')),

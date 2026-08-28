@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const name = 'dsh-prompt-enhancer';
-export const inject = ['webServer', 'systemPrompt'];
+export const inject = ['webServer'];
 
 const DEFAULT_ENDPOINT = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
 

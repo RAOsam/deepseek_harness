@@ -211,7 +211,18 @@ window.__ModuleLoader__.load({
 						(0, react_jsx_runtime.jsxs)("div", {
 							className: s.src,
 							children: [
-								kind === "maid" ? (0, react_jsx_runtime.jsxs)("span", {
+								skin.repo ? (0, react_jsx_runtime.jsxs)("span", {
+									children: [
+										t("byAuthor") + " " + (skin.author || "") + " · ",
+										(0, react_jsx_runtime.jsx)("a", {
+											href: skin.repo,
+											target: "_blank",
+											rel: "noreferrer noopener",
+											children: t("openRepo")
+										}),
+										kind === "maid" ? " · " + t("licMaid") : kind === "dsh-web-ui" ? " · " + t("licBsd") : ""
+									]
+								}) : kind === "maid" ? (0, react_jsx_runtime.jsxs)("span", {
 									children: [
 										t("srcMaid") + " · " + t("byAuthor") + " Small-tailqwq · ",
 										(0, react_jsx_runtime.jsx)("a", {

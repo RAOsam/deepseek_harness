@@ -100,6 +100,7 @@ window.__ModuleLoader__.load({
       var _b = React.useState(false), showAdd = _b[0], setShowAdd = _b[1];
       var _c = React.useState({}), nm = _c[0], setNm = _c[1];
       var _d = React.useState(null), testing = _d[0], setTesting = _d[1];
+      var _e2 = React.useState(-1), editRow = _e2[0], setEditRow = _e2[1];
 
       var updateField = function(i, k, v) {
         setEditing(function(p) { var n = p.slice(); n[i] = Object.assign({}, n[i]); n[i][k] = v; return n; });
@@ -135,14 +136,23 @@ window.__ModuleLoader__.load({
               editing.map(function(m, i) {
                 var tc = 'enh-model-btn' + (m._testOk === true ? ' enh-model-btn-ok' : m._testOk === false ? ' enh-model-btn-err' : '');
                 var tl = testing === i ? '...' : m._testOk === true ? 'OK ' + m._testMs + 'ms' : m._testOk === false ? 'FAIL' : 'test';
-                return React.createElement('div', { key: i, className: 'enh-model-item' },
+                return React.createElement(React.Fragment, { key: i },
+                  React.createElement('div', { className: 'enh-model-item' },
                   React.createElement('div', { className: 'enh-model-info' },
                     React.createElement('div', { className: 'enh-model-name' }, m.name),
                     React.createElement('div', { className: 'enh-model-desc' }, m.desc || m.model),
-                    React.createElement('div', { className: 'enh-model-endpoint' }, m.endpoint || 'default')),
+                    React.createElement('div', { className: 'enh-model-endpoint' }, (m.endpoint || 'default') + (m.apiKey ? ' \u00B7 key\u5DF2\u8BBE' : ''))),
                   React.createElement('div', { className: 'enh-model-actions' },
+                    React.createElement('button', { className: 'enh-model-btn', onClick: function() { setEditRow(editRow === i ? -1 : i); } }, '\u270E'),
                     React.createElement('button', { className: tc, onClick: function() { testModel(m, i); }, disabled: testing === i }, tl),
-                    React.createElement('button', { className: 'enh-model-btn enh-btn-danger', onClick: function() { removeModel(i); } }, '\u00D7')));
+                    React.createElement('button', { className: 'enh-model-btn enh-btn-danger', onClick: function() { removeModel(i); } }, '\u00D7'))),
+                  editRow === i ? React.createElement('div', { className: 'enh-form', style: { padding: '8px 12px', margin: '-4px 0 4px', border: '1px solid var(--dsw-alias-border-l1,#333)', borderRadius: '6px' } },
+                    React.createElement('div', { className: 'enh-form-row' },
+                      React.createElement('label', { className: 'enh-form-label' }, 'Endpoint'),
+                      React.createElement('input', { className: 'enh-form-input', value: m.endpoint || '', onChange: function(e) { updateField(i, 'endpoint', e.target.value); }, placeholder: '\u7559\u7a7a\u7528\u9ed8\u8ba4' })),
+                    React.createElement('div', { className: 'enh-form-row' },
+                      React.createElement('label', { className: 'enh-form-label' }, 'API Key'),
+                      React.createElement('input', { className: 'enh-form-input', type: 'password', value: m.apiKey || '', onChange: function(e) { updateField(i, 'apiKey', e.target.value); }, placeholder: '\u7559\u7a7a\u7528\u5168\u5c40\u9ed8\u8ba4\u5bc6\u94a5' }))) : null);
               })),
             showAdd
               ? React.createElement('div', { className: 'enh-form' },

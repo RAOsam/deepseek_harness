@@ -139,6 +139,7 @@ function scanSkinsDir(baseDir) {
 				tags: Array.isArray(manifest.tags) ? manifest.tags.filter((tag) => typeof tag === "string") : [],
 				accent: typeof manifest.accent === "string" ? manifest.accent : "",
 				author: typeof manifest.author === "string" ? manifest.author : "",
+				repo: typeof manifest.repo === "string" ? manifest.repo : "",
 				order: Number.isFinite(manifest.order) ? manifest.order : 99,
 				builtIn: baseDir !== join(skinsRoot(), ...SKIN_SCOPES[0].split("/")),
 				preview: {

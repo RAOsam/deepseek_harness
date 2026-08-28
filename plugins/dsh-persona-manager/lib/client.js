@@ -289,13 +289,21 @@ window.__ModuleLoader__.load({
     function PeakCountdown() {
       var _pk = React.useState(peakSnapshot), peak = _pk[0], setPeak = _pk[1];
       React.useEffect(function () { var t = setInterval(function () { setPeak(peakSnapshot()); }, 1000); return function () { clearInterval(t); }; }, []);
+      
+      var dotColor = peak.inPeak ? 'var(--dsw-color-warning, #f59e0b)' : 'var(--dsw-alias-label-tertiary)';
+      var label = peak.inPeak ? '高峰时段 · 价格是闲时 2 倍' : '闲时 · 价格是高峰的一半';
+      var animationName = peak.inPeak ? 'pv2-peak-pulse' : 'none';
+      
       return React.createElement('div', {
-        className: 'pv2-peak',
-        style: { color: peak.inPeak ? '#e8c88a' : 'var(--dsw-alias-label-secondary, #999)', background: peak.inPeak ? 'color-mix(in srgb, #c5a468 14%, transparent)' : 'transparent' },
+        style: { textAlign: 'center', maxWidth: 'var(--dsh-chat-content-width)', width: '100%', padding: '2px calc(var(--dsh-composer-side-clearance) + 16px) 0px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', margin: '0 auto', fontSize: '12px', lineHeight: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', overflow: 'hidden', color: 'var(--dsw-alias-label-tertiary)' },
         title: 'DeepSeek \u5CF0\u8C37\u5B9A\u4EF7\uFF1A\u9AD8\u5CF0\u65F6\u6BB5\uFF089:00-12:00\u300114:00-18:00\uFF09\u4EF7\u683C\u4E3A\u7A7A\u95F2\u65F6\u6BB5\u7684 2 \u500D'
       },
-        React.createElement('span', { style: { width: '7px', height: '7px', borderRadius: '50%', flex: 'none', background: peak.inPeak ? '#c5a468' : 'var(--dsw-alias-label-tertiary, #888)' } }),
-        peak.text);
+        React.createElement('style', { dangerouslySetInnerHTML: { __html: '@keyframes pv2-peak-pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.25);opacity:.7}}' } }),
+        React.createElement('span', { style: { width: '6px', height: '6px', borderRadius: '50%', background: dotColor, flex: 'none', animation: animationName + ' 2s ease-in-out infinite' } }),
+        React.createElement('span', null, peak.text),
+        React.createElement('span', { style: { color: 'var(--dsw-alias-separator-primary)', fontSize: '11px' } }, '·'),
+        React.createElement('span', { style: { fontSize: '11px' } }, label)
+      );
     }
 
     var inject = ['slots'];
@@ -304,7 +312,7 @@ window.__ModuleLoader__.load({
         var slots = ctx.slots;
         slots.inject('settings.section', function () { slots.register({ name: 'settings.section', id: 'persona-manager', order: 40, label: '\u4EBA\u8BBE' }, PersonaManager); });
         slots.inject('conversation.session.header.utilities', function () { slots.register({ name: 'conversation.session.header.utilities', id: 'persona-quick-switch', order: 20 }, PersonaQuickSwitch); });
-        slots.inject('sidebar.footer.action', function () { slots.register({ name: 'sidebar.footer.action', id: 'peak-countdown', order: 5 }, PeakCountdown); });
+        slots.inject('conversation.composer.dock', function () { slots.register({ name: 'conversation.composer.dock', id: 'peak-countdown', order: 1 }, PeakCountdown); });
       } catch (err) { console.error('[dsh-persona-manager] apply failed:', err); }
     }
 
