@@ -1282,8 +1282,9 @@ if (!gotLock) {
         } catch (e) { log('[anticrash] restore crash state failed: ' + e.message); }
         startWatchdog(); // L1 watchdog：运行期探活 + 僵死恢复
         log(`started. userData=${app.getPath('userData')}`);
-      });
-  } catch (err) {
-    log("[CRITICAL] App initialization failed: " + err.message);
-    log("[CRITICAL] Stack: " + err.stack);
-    // Don't exit on init failure — show tray and let user debug
+      }
+    catch (err) {
+      log("[CRITICAL] App init failed: " + err.message);
+      log("[CRITICAL] Stack: " + err.stack);
+    }
+  });
