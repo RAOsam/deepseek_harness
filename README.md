@@ -165,9 +165,40 @@ deepseek_harness/
 
 ---
 
-## 🙏 ---## [dot]t-g native shell (WPF + WebView2)Pure Windows native shell based on .NET 8 + C# + WinUI, replacing Electron.### Feature comparison (Electron vs WPF Shell)| Capability | Electron | WPF Native Shell ||---|---|---|| exe icon | Yes | Yes || Window position memory | Yes | Yes || Service status notification | Yes | Yes || Cache cleanup | Yes | Yes || Built-in log viewer | No | Yes `LogViewer.xaml` || Crash prevention (safe mode/watchdog) | Electron only | Via 3090 HTTP bridge || Bundle size | ~180MB (chromium) | ~35MB (.NET Runtime) |### ArchitectureAll desktop behaviors route through the 3090 HTTP bridge—backup/rollback/restart/health/check/cache cleanup all share codebase, no duplication in the native shell.
 
-致谢
+---
+
+## 🖥️ 原生桌面壳（WPF + WebView2）
+
+基于 .NET 8 + C# + WinUI 的 **纯 Windows 原生壳**，替代 Electron。
+
+### ✨ 功能对比（Electron vs WPF Shell）
+
+| 能力 | Electron | WPF Native Shell |
+|---|---|---|
+| exe 图标 | ✅ | ✅ |
+| 窗口位置记忆 | ✅ | ✅ |
+| 服务状态通知 | ✅ | ✅ |
+| 缓存清理 | ✅ | ✅ |
+| 内置日志查看器 | ❌ | ✅ `LogViewer.xaml` |
+| 崩溃预防（安全模式/看门狗） | 仅 Electron 侧 | 通过 3090 HTTP 桥实现 |
+| bundle 体积 | ~180MB (chromium) | ~35MB (.NET Runtime) |
+
+### 🔗 架构说明
+
+所有桌面端行为统一走 **3090 HTTP 桥**——备份/回退/重启/健康检查全部复用服务端代码，无需在原生壳内重复实现。
+
+#### 核心组件
+
+- `MainWindow.xaml.cs` — WebView2 GUI 主窗口
+- `LogViewer.xaml.cs` — 系统日志面板（Electron 版无此功能）
+- `SessionToolsServer.cs` — 备份/回退/恢复 API
+- `CrashRecovery.cs` — 崩溃自愈
+- `CircuitBreaker.cs` — 熔断限流
+- `SkinWatcher.cs` — 皮肤热更新
+
+源码位置：`desktop-native/DeepSeekHarnessDesktop/`
+## 🙏 致谢
 
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — 核心框架
 - [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) — 侧边栏框架设计参考
