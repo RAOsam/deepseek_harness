@@ -1242,7 +1242,6 @@ if (!gotLock) {
     if (settings.autoStart) applyAutoStart(true); // re-assert on login items
     createWindow();
     createTray();
-    console.error("[TRAY-CREATED] tray object:", !!tray ? "exists" : "null");
     startSkinPolling();
     startSessionBackup();
     startSessionToolsServer();
