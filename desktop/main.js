@@ -1249,7 +1249,7 @@ if (!gotLock) {
 } else {
   app.on('second-instance', () => showMainWindow());
 
-.then(async () => {
+  app.whenReady().then(async () => {
   try {
         app.setAppUserModelId('ai.deepseek.harness.desktop');
         loadSettings();
