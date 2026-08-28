@@ -725,16 +725,23 @@ function createWindow() {
     },
   });
 
+  // DSH GUI pane: an isolated WebContentsView
+  try {
+    dshView = new WebContentsView({
   // DSH GUI pane: an isolated WebContentsView to the right of the sidebar
-  dshView = new WebContentsView({
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-    },
-  });
-  mainWindow.contentView.addChildView(dshView);
+    });
+    mainWindow.contentView.addChildView(dshView);
+    layoutViews();
+  } catch (viewErr) {
+    log("[CRITICAL] WebContentsView failed: " + viewErr.message);
+    log("[CRITICAL] Falling back to simple BrowserWindow without split view");
+    dshView = null;
+  }
   layoutViews();
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
@@ -1252,8 +1259,8 @@ if (!gotLock) {
         loadSettings();
         registerIpc();
         if (settings.autoStart) applyAutoStart(true); // re-assert on login items
-        createWindow();
         createTray();
+        createWindow();
         startSkinPolling();
         startSessionBackup();
         startSessionToolsServer();
@@ -1284,24 +1291,3 @@ if (!gotLock) {
     log("[CRITICAL] App initialization failed: " + err.message);
     log("[CRITICAL] Stack: " + err.stack);
     // Don't exit on init failure — show tray and let user debug
-    if (!tray) createTray();
-    if (mainWindow && !mainWindow.isVisible()) mainWindow.show();
-  }
-})
-
-  app.on('window-all-closed', () => {
-    // keep running in tray on Windows (do nothing)
-  });
-
-  app.on('before-quit', (e) => {
-    if (isQuitting) return;
-    e.preventDefault();
-    quitApp();
-  });
-}
-
-async function quitApp() {
-  if (isQuitting) return;
-  isQuitting = true;
-  log('quitting');
-  if (server.startedByUs && !settings.keepServerOnQuit) {
