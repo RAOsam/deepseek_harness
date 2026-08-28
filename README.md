@@ -165,7 +165,9 @@ deepseek_harness/
 
 ---
 
-## 🙏 致谢
+## 🙏 ---## [dot]t-g native shell (WPF + WebView2)Pure Windows native shell based on .NET 8 + C# + WinUI, replacing Electron.### Feature comparison (Electron vs WPF Shell)| Capability | Electron | WPF Native Shell ||---|---|---|| exe icon | Yes | Yes || Window position memory | Yes | Yes || Service status notification | Yes | Yes || Cache cleanup | Yes | Yes || Built-in log viewer | No | Yes `LogViewer.xaml` || Crash prevention (safe mode/watchdog) | Electron only | Via 3090 HTTP bridge || Bundle size | ~180MB (chromium) | ~35MB (.NET Runtime) |### ArchitectureAll desktop behaviors route through the 3090 HTTP bridge—backup/rollback/restart/health/check/cache cleanup all share codebase, no duplication in the native shell.
+
+致谢
 
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — 核心框架
 - [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) — 侧边栏框架设计参考
