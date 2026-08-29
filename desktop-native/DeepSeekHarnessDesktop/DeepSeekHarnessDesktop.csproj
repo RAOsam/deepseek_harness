@@ -2,13 +2,13 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <ApplicationIcon>icon.ico</ApplicationIcon>
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <AssemblyName>DeepSeek Harness Desktop</AssemblyName>
     <RootNamespace>DeepSeekHarnessDesktop</RootNamespace>
-    <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
     <Version>0.2.0</Version>
     <FileVersion>0.2.0.0</FileVersion>
     <Product>DeepSeek Harness Desktop</Product>
@@ -21,12 +21,6 @@
   <ItemGroup>
     <PackageReference Include="Hardcodet.NotifyIcon.Wpf" Version="2.0.1" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Resource Include="Assets\icon.ico" />
-    <Resource Include="Assets\icon-32.png" />
-    <Resource Include="Assets\icon-128.png" />
   </ItemGroup>
 
 </Project>

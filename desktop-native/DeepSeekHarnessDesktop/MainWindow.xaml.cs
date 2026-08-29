@@ -125,12 +125,16 @@ public partial class MainWindow : Window
 
     private void OnNavigationStarting(object? sender, Microsoft.Web.WebView2.Core.CoreWebView2NavigationStartingEventArgs e)
     {
-        // 仅允许导航到本地服务
-        if (!e.Uri.StartsWith($"http://{_server.Host}:{_server.TargetPort}") && !e.Uri.StartsWith("about:"))
+        // 允许导航到本地服务、about: 页面和 WebSocket 升级
+        if (e.Uri.StartsWith($"http://{_server.Host}:{_server.TargetPort}")
+            || e.Uri.StartsWith("about:")
+            || e.Uri.StartsWith("ws://")
+            || e.Uri.StartsWith("wss:"))
         {
-            e.Cancel = true;
-            Log.Info($"[webview] blocked navigation to {e.Uri}");
+            return;
         }
+        e.Cancel = true;
+        Log.Info($"[webview] blocked navigation to {e.Uri}");
     }
 
     private void OnNavigationCompleted(object? sender, Microsoft.Web.WebView2.Core.CoreWebView2NavigationCompletedEventArgs e)
@@ -146,6 +150,15 @@ public partial class MainWindow : Window
         Browser.CoreWebView2.Settings.IsScriptEnabled = true;
         Browser.CoreWebView2.Settings.AreDefaultScriptDialogsEnabled = true;
         Browser.CoreWebView2.Settings.IsWebMessageEnabled = true;
+        Browser.CoreWebView2.Settings.AreDevToolsEnabled = true;
+        Browser.CoreWebView2.WebMessageReceived += (s, args) =>
+        {
+            var msg = args.TryGetWebMessageAsString();
+            if (!string.IsNullOrEmpty(msg) && msg.Contains("[dsh-diag]"))
+            {
+                Log.Info(msg);
+            }
+        };
         // 注入 window.dshDesktop 桥（对应 Electron 版 preload.js）
         InjectDSHBridge();
     }
@@ -212,8 +225,40 @@ public partial class MainWindow : Window
   window.addEventListener('skin-changed', function(e) {
     skinListeners.forEach(function(fn) { try { fn({ id: e.detail }); } catch(ex) {} });
   });
-})();
-";
+  // WebSocket 诊断 - 测试 WebView2 能否建立 WebSocket 连接
+  setTimeout(function() {
+    var wsUrl = 'ws://127.0.0.1:3080/api/events.host';
+    var log = function(msg) {
+      console.log('[dsh-diag] ' + msg);
+      try { window.chrome.webview.postMessage('[dsh-diag] ' + msg); } catch(e) {}
+    };
+    try {
+      var ws = new WebSocket(wsUrl);
+      var timeout = setTimeout(function() {
+        log('WS TIMEOUT');
+        ws.close();
+      }, 3000);
+      ws.addEventListener('open', function() {
+        clearTimeout(timeout);
+        log('WS OPEN: ' + wsUrl);
+        ws.close();
+      });
+      ws.addEventListener('message', function(ev) {
+        log('WS MSG: ' + String(ev.data).substring(0, 200));
+      });
+      ws.addEventListener('error', function(ev) {
+        clearTimeout(timeout);
+        log('WS ERROR');
+      });
+      ws.addEventListener('close', function(ev) {
+        clearTimeout(timeout);
+        log('WS CLOSED code=' + ev.code + ' reason=' + ev.reason);
+      });
+    } catch(err) {
+      log('WS EXCEPTION: ' + err.message);
+    }
+  }, 2000);
+})();";
         Browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(bridgeJs);
     }
 
