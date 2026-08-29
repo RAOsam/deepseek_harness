@@ -1,3 +1,16 @@
+
+### 为什么 deepseek-balance 和侧边卡片没丢失？
+
+**Cordis 有两层加载机制，patch.yml 只管 Layer 2。**
+
+| 层级 | 来源 | 注册方式 | 示例 |
+|------|------|----------|------|
+| **Layer 1 — Bundles** | `package.json → dsh.profile.bundles` | 包自带 `cordis.patch.yml` + `dsh.bundle.patch` | deepseek-balance ✅, dsh-better-sidebar ✅ |
+| **Layer 2 — Patch** | `~/.dsh/profiles/web/cordis.patch.yml` | 用户手动写的 `-insert:` 块 | 7 个插件全部 ❌ |
+
+- `deepseek-balance/package.json` 有 `dsh.bundle.patch` → 自动注册
+- 其他 5 个插件（skin-switch/session-tools/persona-manager/memory/prompt-enhancer）没有 bundle.patch → 只能走 Layer 2
+
 # DSH Development Log
 
 > 记录项目开发过程、架构决策、踩过的坑。方便回溯，避免重复犯错。
@@ -144,7 +157,6 @@ dsh/
 
 *最后更新: 2026-08-29*
 
-
 ---
 
 ## 待解决问题（P0-P1）
@@ -191,10 +203,38 @@ dsh/
 
 ### P1 — 桌面端框架外观待美化
 
+| # | 子项 | 现象 | 方案 | 涉及文件 |
+|---|------|------|------|----------|
+| 1 | **Mica/Acrylic 材质** | 窗口边框是死板的灰色，缺乏现代感 | 调用 DWM API 开启 Mica 材质（Win11 原生模糊半透明），保留系统边框。改动不到 20 行 | `MainWindow.xaml.cs` OnSourceInitialized() 后注入 |
+| 2 | **自绘标题栏（无边框模式）** | 原生 Windows 标题栏与 WebView2 内容风格不统一 | `WindowStyle="None"` → 自定义顶栏：左侧 logo+应用名 + 右侧 min/max/close 按钮。浏览器内容延伸到标题栏区域，类似 VS Code/Notion 效果 | `MainWindow.xaml` Grid 布局拆分为 TitleBar(48px) + WebView2(剩余空间) |
+| 3 | **圆角窗口** | Win11 应用普遍使用圆角窗口，当前为直角 | XAML 中用 `CornerRadius` 给顶层 Border 设置圆角（4-8px）。配合无边框模式可实现完整四角圆润 | `MainWindow.xaml` Root Border |
+| 4 | **全局主题色统一** | 托盘状态颜色固定、Loading 进度条配色与前端皮肤不一致 | 定义一套 ColorResource 字典：主色 #4A90D9、状态绿/橙/红三色。Loading Overlay、托盘气球、托盘图标均引用同一色值 | `App.xaml` ResourceDictionary + `TrayIcon.cs` / LoadingOverlay |
+| 5 | **托盘图标状态化** | 托盘图标单一颜色，无法直观区分服务状态 | 根据 Server.Status 切换 icon.ico 的 overlay 或替换不同颜色的 .ico 文件（绿=运行/黄=启动中/红=出错） | `App.xaml.cs` TrayIcon 创建逻辑 |
+| 6 | **动画过渡** | 窗口打开/关闭/隐藏无过渡效果，体验生硬 | Window Show/Hide 添加 FadeIn/FadeOut (OpacityAnimation, 200ms)。最小化到 tray 时缩小动画 | `MainWindow.xaml.cs` Loaded/Closing 事件 |
+| 7 | **LogViewer 样式统一** | 日志面板可能使用默认 SystemFonts，与整体设计脱节 | LogViewer.xaml 复用 MainWindow 的颜色资源，统一字体/间距/边距 | `LogViewer.xaml` |
+
+**优先级建议：** 先做第 1 项 Mica（半天搞定，效果立竿见影），再做第 2 项自绘标题栏（一周内），其余逐步完善。
+
+**参考对标：** Electron 壳 (`desktop/main.js`) 有更成熟的 loading 动画和加载页 CSS 样式，可作为视觉对比基准。
+### P2 — patch.yml 自愈机制（短期止血）+ Bundle 化转型（长期治本）
+
 | 项目 | 详情 |
 |------|------|
-| **现象** | 原生 WPF 壳目前功能完整但界面朴素，缺乏与现代桌面应用匹配的视觉设计 |
-| **建议改进** | - 窗口圆角 + 亚克力/模糊材质（Win11 风格）<br>- 自定义标题栏（无边框模式下隐藏 Windows 原生控件）<br>- 全局主题色统一（与前端皮肤联动）<br>- 托盘菜单图标区分状态颜色（绿=运行/橙=警告/红=出错）<br>- 动画过渡效果（打开/关闭窗口的淡入淡出） |
-| **参考** | Electron 壳 (`desktop/main.js`) 有更成熟的设计，可作为对比基准 |
-| **涉及代码** | `.xaml` 布局文件、`MainWindow.xaml.cs` 视觉效果渲染、CSS 样式表 |
-| **影响** | 影响第一印象和长期使用舒适感 |
+| **现象** | 手动编辑 cordis.patch.yml 时可能丢失 `- insert:` 块，导致全部插件注册失效；安全模式因只读属性无法自动修复 |
+| **根因** | Cordis 有两层加载：Layer 1 bundles（自动）、Layer 2 patch（手动维护）。patch.yml 丢了就全盘崩溃 |
+| **短期方案：自愈** | 1. 启动前校验所有 insert ID 是否在 node_modules 中存在<br>2. 写入前自动备份 + 检测只读属性<br>3. 校验失败时提前返回错误并提示恢复路径 |
+| **长期方案：Bundle 化** | 将 5 个 Layer 2 插件改造为自带 cordis.patch.yml + dsh.bundle.patch，走 Layer 1 自动注册。<br>**需要：** 逐个改 package.json、创建 patch 文件、peerDep 验证、npm registry 发布。估计 2-3 周 |
+| **优先级调整** | P1 -> P2（自愈短期可上线，Bundle 化是独立大工程） |
+| **涉及代码** | desktop/main.js startServer()、各插件 package.json + cordis.patch.yml |
+
+| 项目 | 详情 |
+
+#### P3 — Windows 安装包制作（Inno Setup + CI/CD）
+
+| 项目 | 详情 |
+|------|------|
+| **现象** | README.md 写着 Method 1 Installer，链接指向 GitHub Releases，但该仓库从未发布过任何安装程序，页面是空的 |
+| **难点评估** | 低。项目已配置 PublishSingleFile=true + IncludeNativeLibrariesForSelfExtract，dotnet publish 直接输出单文件 exe |
+| **推荐方案** | Inno Setup（免费、Windows 行业标准脚本），约 40 行可覆盖所有需求：安装目录、快捷方式、卸载入口 |
+| **自动化** | PowerShell 打包 -> iscc.exe -> 上传到 GitHub Releases |
+| **预期工作量** | 本地跑通半天，CI/CD 接入一天 |
