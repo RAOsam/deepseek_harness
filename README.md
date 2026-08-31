@@ -4,106 +4,127 @@
 [![.NET](https://img.shields.io/badge/.NET_8-512BD4?style=for-the-badge&logo=.net&logoColor=white)]()
 [![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)]()
 
-> A Windows desktop client + plugin ecosystem for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
+> 一个 Windows 桌面客户端 + 插件生态系统，基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 构建。
 
-DSH wraps the deepseek-ai Web GUI into a full desktop experience — system tray management, automatic service lifecycle, session backup/rollback, and a growing plugin ecosystem.
+DSH 将 DeepSeek AI 的 Web GUI 封装为完整的桌面体验 —— 系统托盘管理、自动服务生命周期、会话备份/回滚，以及不断扩展的插件生态。
 
 ---
 
-## ✨ Features
+## ✨ 功能特性
 
-### 🖥️ Desktop Shells
+### 🖥️ 桌面外壳
 
-Two shell options available — pick whichever fits your needs:
+#### 🔷 WPF 原生外壳（推荐）
 
-#### 🔷 WPF Native Shell (Recommended)
+纯 .NET 8 + C# + WPF + WebView2。**约 35MB 轻量体积**，零 Chromium 开销。
 
-Pure .NET 8 + C# + WinUI + WebView2. **Lightweight at ~35MB** with zero Chromium overhead.
-
-| Feature | Status |
+| 功能 | 状态 |
 |---|---|
-| Exe icon & window memory | ✅ Built-in |
-| Service status notifications | ✅ Real-time |
-| Cache cleanup utilities | ✅ One-click |
-| Built-in log viewer | ✅ `LogViewer.xaml` |
-| Crash prevention (safe mode/watchdog) | ✅ Via HTTP bridge |
-| Bundle size | 🟢 ~35 MB |
+| 窗口关闭最小化到托盘 | ✅ 不退出程序 |
+| 托盘菜单（重启服务、开机自启、安全模式） | ✅ 含气泡提示反馈 |
+| 服务状态实时通知 | ✅ 启动/停止/错误提示 |
+| 一键清理 WebView2 缓存 | ✅ |
+| 内置日志查看器 | ✅ `LogViewer.xaml` |
+| 崩溃防护（安全模式/看门狗） | ✅ 通过 HTTP 桥接 |
+| 皮肤热加载 | ✅ `SkinWatcher.cs` |
+| DSH CLI 全局路径解析 | ✅ 支持全局 npm 安装 |
+| 体积 | 🟢 ~35 MB |
 
-**Core components:**
-- `MainWindow.xaml.cs` — WebView2 GUI host
-- `LogViewer.xaml.cs` — System log panel
-- `SessionToolsServer.cs` — API handler
-- `CrashRecovery.cs` / `CircuitBreaker.cs` — Fault isolation
-- `SkinWatcher.cs` — Hot-skin reload
+**核心组件：**
+- `MainWindow.xaml.cs` — WebView2 GUI 宿主
+- `App.xaml.cs` — 托盘菜单、服务生命周期管理
+- `LogViewer.xaml.cs` — 系统日志面板
+- `SessionToolsServer.cs` — 3090 API 处理器
+- `CrashRecovery.cs` / `CircuitBreaker.cs` — 故障隔离
+- `DshServiceManager.cs` — DSH 服务进程管理
+- `SkinWatcher.cs` — 皮肤热加载
 
-Source: `desktop-native/DeepSeekHarnessDesktop/`
+源码：`desktop-native/DeepSeekHarnessDesktop/`
 
-#### 💙 Legacy Shell
+#### 💙 旧版外壳
 
-`desktop/main.js` — Full-featured desktop implementation with tray, auto-start, crash recovery, safe mode isolation, and session backup/restore via 3090 HTTP bridge.
+`desktop/main.js` — 完整桌面实现，包含托盘、自启、崩溃恢复、安全模式隔离、会话备份/恢复（通过 3090 HTTP 桥接）。
 
-| Feature | Status |
+| 功能 | 状态 |
 |---|---|
-| Auto service start/stop | ✅ |
-| Tray menu (restart, startup, safe mode) | ✅ |
-| Crash self-recovery (~2s restart) | ✅ |
-| Session backup & rollback | ✅ |
-| Skin support (maid-atelier built-in) | ✅ |
-| Peak/valley pricing countdown | ✅ |
-| One-click update check | ✅ |
+| 自动服务启动/停止 | ✅ |
+| 托盘菜单（重启、自启、安全模式） | ✅ |
+| 崩溃自恢复（~2s 重启） | ✅ |
+| 会话备份与回滚 | ✅ |
+| 皮肤支持 | ✅ |
+| 峰谷计费倒计时 | ✅ |
+| 一键更新检查 | ✅ |
 
-### 🔌 Plugin Ecosystem
+### 🔌 插件生态
 
-Each plugin uses the **Cordis architecture**: `lib/index.js` (server routes) + `lib/client.js` (UI slots). All registered in `profiles/web/cordis.patch.yml`.
+每个插件使用 **Cordis 架构**：`lib/index.js`（服务端路由）+ `lib/client.js`（UI 插槽）。所有插件注册在 `profiles/web/cordis.patch.yml`。
 
-| Plugin | Purpose | Key Features |
+| 插件 | 用途 | 关键特性 |
 |---|---|---|
-| `${b}dsh-memory${b}` | Long-term memory | Category groups, BM25 dedup, image OCR |
-| `${b}dsh-persona-manager${b}` | Persona mgmt | Multi-p creation, toast alerts, persistence |
-| `${b}dsh-prompt-enhancer${b}` | Prompt enhance | 3 modes, custom models, connectivity test |
-| `${b}dsh-session-tools${b}` | Session tools | Backup, rollback, restore |
-| `${b}dsh-skin-switch${b}` | Theme switcher | Settings UI, maid-atelier included |
-| `${b}deepseek-balance${b}` | Balance monitor | Usage stats, bar charts, real-time |
+| `${b}dsh-memory${b}` | 长期记忆 | 分类分组、BM25 去重、图片 OCR |
+| `${b}dsh-persona-manager${b}` | 角色管理 | 多角色创建、Toast 提示、持久化 |
+| `${b}dsh-prompt-enhancer${b}` | 提示词增强 | 3 种模式、自定义模型、连通性测试 |
+| `${b}dsh-session-tools${b}` | 会话工具 | 备份、回滚、恢复 |
+| `${b}dsh-skin-switch${b}` | 皮肤切换器 | 设置一级标签页、GitHub 仓库链接、支持鲸鱼娘昼夜皮肤 |
+| `${b}deepseek-balance${b}` | 余额监控 | 用量统计、柱状图、实时更新 |
 
 ---
 
-## 🚀 Installation
+## 🚀 安装
 
-**Prerequisites:**
+**前置要求：**
 - Windows 10/11
 - [Node.js](https://nodejs.org/) ≥ 20
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
 
-### Method 1 — Installer (Fastest)
+### 方式一 — 安装包（最快）
 
-[Download latest installer →](https://github.com/RAOsam/deepseek_harness/releases)
+[下载最新安装包 →](https://github.com/RAOsam/deepseek_harness/releases)
 
-### Method 2 — Build from source
+### 方式二 — 从源码构建
 
 ```powershell
 git clone https://github.com/RAOsam/deepseek_harness.git
-cd deepseek_harness/desktop
-npm install
-npm start
+cd deepseek_harness
+
+# 安装 DSH CLI
+npm install -g @deepseek-ai/dsh
+
+# 构建 WPF 原生外壳
+cd desktop-native/DeepSeekHarnessDesktop
+dotnet build -c Release
+
+# 启动（DSH 服务 + 桌面客户端）
+dsh web --port 3080
+# 另开终端启动桌面客户端
+start bin/Release/net8.0-windows/"DeepSeek Harness Desktop.exe"
 ```
 
 ---
 
-## 📁 Project Structure
+## 📁 项目结构
 
 ```
 deepseek_harness/
-+-- desktop/                    # Legacy desktop shell
-+   +- main.js                  # Main process (tray, anti-crash, safe mode)
-+   +- preload.js               # IPC bridge
-+   +- assets/                  # Icons & resources
-+   +- test-anticrash-deep.js   # 13 fault injection tests
-+   +- release/                 # Build artifacts
-+-- desktop-native/             # WPF native shell (alternative)
-+   +- DeepSeekHarnessDesktop/  # WinUI + WebView2 project
++-- desktop/                         # 旧版桌面外壳
++   +- main.js                       # 主进程（托盘、防崩溃、安全模式）
++   +- preload.js                    # IPC 桥接
++   +- assets/                       # 图标与资源
++   +- test-anticrash-deep.js        # 13 项故障注入测试
++   +- release/                      # 构建产物
++-- desktop-native/                  # WPF 原生外壳
++   +- DeepSeekHarnessDesktop/       # WPF + WebView2 项目
++       +- App.xaml.cs               # 托盘菜单、服务管理
++       +- MainWindow.xaml.cs        # WebView2 宿主窗口
++       +- Services/
++           +- DshServiceManager.cs  # DSH 进程管理
++           +- CrashRecovery.cs      # 崩溃恢复
++           +- SessionToolsServer.cs # 3090 HTTP 桥
++           +- SkinWatcher.cs        # 皮肤监控
 +-- docs/
 +   +- native-desktop-analysis.md
-+   +- optimized-memories.md    # Project knowledge base
-+-- plugins/                    # DSH plugins
++   +- optimized-memories.md         # 项目知识库
++-- plugins/                         # DSH 插件
 +   +- dsh-memory/
 +   +- dsh-persona-manager/
 +   +- dsh-prompt-enhancer/
@@ -115,65 +136,66 @@ deepseek_harness/
 
 ---
 
-## 🔧 Development
+## 🔧 开发
 
-### Plugin Rules
+### 插件规范
 
-ECAH each plugin needs three files:
-- `lib/index.js` — Server endpoints (Host)
-- `lib/client.js` — UI slot registration (Client)
-- `package.json` — Package descriptor
+每个插件需要三个文件：
+- `lib/index.js` — 服务端端点（Host）
+- `lib/client.js` — UI 插槽注册（Client）
+- `package.json` — 包描述文件
 
-**Must comply:**
-1. ESM modules only — no `require()`, use `import`
-2. Must register in `profiles/web/cordis.patch.yml` under `- insert:` entries
-3. No duplicate `const` declarations
-4. `inject` array lists only actual dependencies
-5. Validate syntax with `node --check` before deploying
+**必须遵守：**
+1. 仅使用 ESM 模块 — 不允许 `require()`，使用 `import`
+2. 必须在 `profiles/web/cordis.patch.yml` 的 `- insert:` 条目中注册
+3. 不允许重复的 `const` 声明
+4. `inject` 数组只列出实际依赖项
+5. 部署前使用 `node --check` 验证语法
 
-### 3090 HTTP Bridge Endpoints
+### 3090 HTTP 桥接端点
 
-All desktop behaviors route through this unified bridge server.
+所有桌面行为通过此统一桥接服务器路由。
 
-| Endpoint | Method | Description |
+| 端点 | 方法 | 描述 |
 |---|---|---|
-| `${b}/health${b}` | GET | Health check |
-| `${b}/health?probe=liveness${b}` | GET | Liveness probe — ping 3080 |
-| `${b}/health?probe=readiness${b}` | GET | Readiness — status + safe mode |
-| `${b}/health?probe=metrics${b}` | GET | Memory/uptime/crashes |
-| `${b}/backup${b}` | GET | Backup current session |
-| `${b}/restore${b}` | GET | Restore session + reload GUI |
-| `${b}/rollback${b}` | GET | Rollback to last backup |
-| `${b}/restart${b}` | GET | Restart DSH service (rate limited) |
-| `${b}/open?path=${b}` | GET | Open file |
-| `${b}/reveal?path=${b}` | GET | Reveal in File Explorer |
-| `${b}/dom?q=${b}` | GET | Query DOM element |
+| `${b}/health${b}` | GET | 健康检查 |
+| `${b}/health?probe=liveness${b}` | GET | 存活探针 — ping 3080 |
+| `${b}/health?probe=readiness${b}` | GET | 就绪探针 — 状态 + 安全模式 |
+| `${b}/health?probe=metrics${b}` | GET | 内存/运行时间/崩溃次数 |
+| `${b}/backup${b}` | GET | 备份当前会话 |
+| `${b}/restore${b}` | GET | 恢复会话 + 刷新页面 |
+| `${b}/rollback${b}` | GET | 回滚到上次备份 |
+| `${b}/restart${b}` | GET | 重启 DSH 服务（频率限制） |
+| `${b}/open?path=${b}` | GET | 打开文件 |
+| `${b}/reveal?path=${b}` | GET | 在资源管理器中显示 |
+| `${b}/dom?q=${b}` | GET | 查询 DOM 元素 |
 
-### 🛡️ Anti-Crash Mechanism
+### 🛡️ 防崩溃机制
 
-Three-layer defense inspired by Netflix Hystrix + Kubernetes health checks + Sentinel rate-limiting.
+三层防御，灵感来自 Netflix Hystrix + Kubernetes 健康检查 + Sentinel 限流。
 
-| Layer | Mechanism | Effect |
+| 层级 | 机制 | 效果 |
 |---|---|---|
-| L1 Process Guardian | Crash attribution + auto restart | Exit code/signal/stderr analysis |
-| L1 Rate Limiting | Exponential backoff + circuit breaker | 1s→2s→4s… cap 60s; cooldown 120s |
-| L1 Safe Mode | Consecutive crash degradation | 3+ crashes → disable non-core plugins |
-| L2 Watchdog | Runtime liveness probe | Ping every 5s; kill after 3 failures |
-| L3 Persistence | ${b}crash-state.json${b} | History survives restarts |
+| L1 进程守护 | 崩溃归因 + 自动重启 | 退出码/信号/stderr 分析 |
+| L1 频率限制 | 指数退避 + 熔断器 | 1s→2s→4s… 上限 60s；冷却 120s |
+| L1 安全模式 | 连续崩溃降级 | 3 次以上崩溃 → 禁用非核心插件 |
+| L2 看门狗 | 运行时存活探针 | 每 5s 检测；3 次失败后 kill |
+| L3 持久化 | ${b}crash-state.json${b} | 历史记录跨重启保留 |
 
-Recovery chain: `kill` → `cause=runtime` → backoff 1s → spawn → recovered in **~2 seconds**.
+恢复链路：`kill` → `cause=runtime` → 退避 1s → 启动 → 约 **~2 秒**恢复。
 
-Test: `node desktop/test-anticrash-deep.js` (13 scenarios including real crash tests).
+测试：`node desktop/test-anticrash-deep.js`（13 个场景，含真实崩溃测试）。
 
 ---
 
-## 🤝 Credits
+## 🤝 致谢
 
-- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — Core framework
-- [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) — Sidebar design reference
+- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — 核心框架
+- [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) — 侧边栏设计参考
+- [deep-whale-day-night-theme](https://github.com/GGBond2424648901/deep-whale-day-night-theme) — 鲸鱼娘昼夜皮肤
 
 ---
 
-## 📄 License
+## 📄 许可证
 
 MIT

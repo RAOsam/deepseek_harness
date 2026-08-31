@@ -87,13 +87,19 @@ public partial class App : Application
             switch (status)
             {
                 case DshServiceManager.Status.Running:
+                    _trayIcon.ToolTipText = $"DeepSeek Harness Desktop — 运行中 ({Settings.Host}:{Settings.Port})";
                     _trayIcon.ShowBalloonTip("DSH 服务", "服务已就绪", Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Info);
                     break;
                 case DshServiceManager.Status.Error:
+                    _trayIcon.ToolTipText = $"DeepSeek Harness Desktop — 错误: {detail}";
                     _trayIcon.ShowBalloonTip("DSH 服务", $"启动失败：{detail}", Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Error);
                     break;
                 case DshServiceManager.Status.Stopped:
+                    _trayIcon.ToolTipText = "DeepSeek Harness Desktop — 已停止";
                     _trayIcon.ShowBalloonTip("DSH 服务", "服务已停止", Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Info);
+                    break;
+                case DshServiceManager.Status.Starting:
+                    _trayIcon.ToolTipText = "DeepSeek Harness Desktop — 启动中...";
                     break;
             }
         };
@@ -214,10 +220,20 @@ public partial class App : Application
         {
             _ = Task.Run(async () =>
             {
+                _trayIcon?.Dispatcher.Invoke(() =>
+                    _trayIcon.ShowBalloonTip("DSH 服务", "正在重启...", Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Info));
                 await Server.StopServer();
                 await Task.Delay(500);
                 Server.ManualStop = false;
                 await Server.StartServer();
+                await Task.Delay(1000);
+                var status = Server.CurrentStatus;
+                _trayIcon?.Dispatcher.Invoke(() =>
+                    _trayIcon.ShowBalloonTip("DSH 服务",
+                        status == DshServiceManager.Status.Running ? "服务就绪" : $"重启失败: {status}",
+                        status == DshServiceManager.Status.Running
+                            ? Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Info
+                            : Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Error));
             });
         });
         System.Windows.Controls.MenuItem autoStartItem = null!;

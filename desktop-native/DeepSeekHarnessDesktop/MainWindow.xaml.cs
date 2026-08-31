@@ -296,13 +296,9 @@ public partial class MainWindow : Window
             }
             return;
         }
-        // 否则最小化到托盘
-        if (app.Settings.MinimizeToTray)
-        {
-            e.Cancel = true;
-            this.Hide();
-        }
-        // 若 MinimizeToTray==false，允许窗口关闭
+        // 关闭窗口时始终隐藏到托盘（不退出程序）
+        e.Cancel = true;
+        this.Hide();
     }
 
     /// <summary>清理 WebView2 缓存目录。</summary>

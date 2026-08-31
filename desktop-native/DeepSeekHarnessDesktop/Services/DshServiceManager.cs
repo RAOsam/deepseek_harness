@@ -110,8 +110,12 @@ public class DshServiceManager : IDisposable
                 if (File.Exists(cand) && (best == null || File.GetLastWriteTimeUtc(cand) > File.GetLastWriteTimeUtc(best)))
                     best = cand;
             }
-            return best;
+            if (best != null) return best;
         }
+        // 全局 npm
+        var appData = Environment.GetEnvironmentVariable("APPDATA") ?? "";
+        var globalNpm = Path.Combine(appData, "npm", "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js");
+        if (File.Exists(globalNpm)) return globalNpm;
         return null;
     }
 
@@ -255,7 +259,14 @@ public class DshServiceManager : IDisposable
     {
         ManualStop = true;
         var child = Child;
-        if (child == null || child.HasExited) { SetStatus(Status.Stopped, "服务已停止"); return; }
+        if (child == null || child.HasExited)
+        {
+            // 如果子进程不存在但端口仍被占用，释放端口
+            if (await TcpProbe(TargetPort, 500))
+                await ReleasePort(TargetPort);
+            SetStatus(Status.Stopped, "服务已停止");
+            return;
+        }
 
         // 优雅终止
         child.Kill(entireProcessTree: true);
