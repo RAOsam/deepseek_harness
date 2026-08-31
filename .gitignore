@@ -39,5 +39,5 @@ desktop/asar-extract-tmp/
 plugins/_review/
 plugins/dsh-skin-switch/skins/liquid-glass/
 # Build outputs 
-*/bin/ 
-*/obj/ 
+**/bin/ 
+**/obj/
