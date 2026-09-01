@@ -7,37 +7,13 @@ node_modules/
 .dsh/
 
 # Build output
+**/bin/
+**/obj/
 desktop/release/
-desktop/scripts/.wt-profile/
-desktop/scripts/.probe*/?/
-desktop/scripts/.min-profile/
-desktop/scripts/.wt2-profile/
-desktop/scripts/.wtd-profile/
-desktop/scripts/.wtb-profile/
-desktop/scripts/.wts-profile/
-desktop/scripts/.wtc-profile/
 
 # Temp
-.tmp-eac-repo/
 *.zstd
 
 # OS
 Thumbs.db
 Desktop.ini
-
-# Electron test profiles
-desktop/scripts/.dbg-profile/
-desktop/scripts/.dbg2-profile/
-desktop/scripts/.z50-profile/
-desktop/scripts/debug-screenshot.png
-desktop/scripts/*.txt
-desktop/scripts/*.err
-
-# Local backups & scratch
-desktop/*.bak-*
-desktop/asar-extract-tmp/
-plugins/_review/
-plugins/dsh-skin-switch/skins/liquid-glass/
-# Build outputs 
-**/bin/ 
-**/obj/
