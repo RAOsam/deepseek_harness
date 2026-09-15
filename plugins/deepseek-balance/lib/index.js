@@ -93,7 +93,7 @@ function computeStats(snapshots) {
   return {
     todaySpend: daySpend(today),
     weekSpend: weekDays.reduce((sum, d) => sum + daySpend(d), 0),
-    history: days.slice(-14).map((d) => ({ day: d, spend: daySpend(d) })),
+    history: days.slice(-7).map((d) => ({ day: d, spend: daySpend(d) })),
     sinceInstallSpend: latest && first ? Math.max(0, first.total - latest.total) : null,
     snapshotCount: snapshots.length,
     since: first ? first.ts : null,

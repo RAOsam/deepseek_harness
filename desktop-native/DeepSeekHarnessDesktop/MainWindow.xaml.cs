@@ -76,14 +76,30 @@ public partial class MainWindow : Window
                     break;
                 case DshServiceManager.Status.Starting:
                     LoadingOverlay.Visibility = Visibility.Visible;
+                    LoadingStatusText.Text = "正在启动 DSH 服务…";
+                    LoadingProgress.Visibility = Visibility.Visible;
+                    LoadingProgress.IsIndeterminate = true;
+                    LoadingErrorText.Visibility = Visibility.Collapsed;
                     break;
                 case DshServiceManager.Status.Error:
-                    LoadingOverlay.Visibility = Visibility.Collapsed;
-                    MessageBox.Show($"DSH 服务启动失败：{detail}",
-                        "启动错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                    LoadingOverlay.Visibility = Visibility.Visible;
+                    LoadingStatusText.Text = "DSH 服务启动失败";
+                    LoadingProgress.Visibility = Visibility.Collapsed;
+                    LoadingErrorText.Text = detail;
+                    LoadingErrorText.Visibility = Visibility.Visible;
                     break;
                 case DshServiceManager.Status.Stopped:
                     LoadingOverlay.Visibility = Visibility.Visible;
+                    LoadingStatusText.Text = "DSH 服务已停止，正在恢复…";
+                    LoadingProgress.Visibility = Visibility.Visible;
+                    LoadingProgress.IsIndeterminate = true;
+                    LoadingErrorText.Visibility = Visibility.Collapsed;
+                    _navigated = false;
+                    // 立即清空页面，防止皮肤背景短暂显示
+                    if (Browser.CoreWebView2 != null)
+                    {
+                        try { Browser.CoreWebView2.Navigate("about:blank"); } catch { }
+                    }
                     break;
             }
             // 广播服务状态到页面
@@ -147,11 +163,12 @@ public partial class MainWindow : Window
 
     private void OnCoreWebView2Init(object? sender, EventArgs e)
     {
-        Browser.CoreWebView2.Settings.IsScriptEnabled = true;
-        Browser.CoreWebView2.Settings.AreDefaultScriptDialogsEnabled = true;
-        Browser.CoreWebView2.Settings.IsWebMessageEnabled = true;
-        Browser.CoreWebView2.Settings.AreDevToolsEnabled = true;
-        Browser.CoreWebView2.WebMessageReceived += (s, args) =>
+        var core = Browser.CoreWebView2;
+        core.Settings.IsScriptEnabled = true;
+        core.Settings.AreDefaultScriptDialogsEnabled = true;
+        core.Settings.IsWebMessageEnabled = true;
+        core.Settings.AreDevToolsEnabled = true;
+        core.WebMessageReceived += (s, args) =>
         {
             var msg = args.TryGetWebMessageAsString();
             if (!string.IsNullOrEmpty(msg) && msg.Contains("[dsh-diag]"))
@@ -267,6 +284,8 @@ public partial class MainWindow : Window
     {
         Dispatcher.Invoke(() =>
         {
+            // 加载期间不广播皮肤，防止闪烁
+            if (LoadingOverlay.Visibility == Visibility.Visible) return;
             if (Browser.CoreWebView2 == null) return;
             try
             {

@@ -202,8 +202,8 @@ window.__ModuleLoader__.load({
 					const barW = Math.max(3, Math.min(18, Math.floor((innerW - (n - 1) * 2) / n)));
 					const gap = n > 1 ? Math.max(2, Math.floor((innerW - n * barW) / (n - 1))) : 0;
 					const labelAll = n <= 7;
-					const dateAll = n <= 14;
 					const fmtDay = (d) => { const m = d.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[2] + '-' + m[3] : d.slice(5, 10); };
+					const fmtDayShort = (d) => { const m = d.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? String(parseInt(m[3])) + '日' : ''; };
 					const nodes = [];
 					items.forEach((h, i) => {
 						const x = PAD_X + i * (barW + gap);
@@ -213,7 +213,7 @@ window.__ModuleLoader__.load({
 							React.createElement("title", null, h.day + " 消耗 " + fmt(h.spend, balance.currency)),
 							React.createElement("rect", { x, y, width: barW, height: barH, rx: 2, fill: "#4d6bfe", className: "dsb-bar" }),
 							labelAll ? React.createElement("text", { x: x + barW / 2, y: Math.max(9, y - 4), className: "dsb-val" }, fmt(h.spend, balance.currency)) : null,
-							dateAll ? React.createElement("text", { x: x + barW / 2, y: H - 4, className: "dsb-date" }, fmtDay(h.day)) : null));
+							React.createElement("text", { x: x + barW / 2, y: H - 4, className: "dsb-date" }, n <= 7 ? fmtDay(h.day) : fmtDayShort(h.day))));
 					});
 					chart = React.createElement("div", { className: "dsb-chart" },
 						React.createElement("svg", { className: "dsb-line", viewBox: "0 0 " + W + " " + H }, nodes));

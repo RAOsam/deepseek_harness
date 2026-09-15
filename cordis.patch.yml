@@ -33,12 +33,6 @@
 - insert:
     - id: prompt-enhancer
       name: 'dsh-prompt-enhancer'
-
-# maid-atelier skin (永久启用)
-- insert:
-    - id: ui-skin-maid-atelier
-      name: '@dsh-external/dsh-client-ui-skin-maid-atelier'
-
 # 更积极的压缩配置（解决上下文溢出问题）
 - id: compaction-basic
   config:

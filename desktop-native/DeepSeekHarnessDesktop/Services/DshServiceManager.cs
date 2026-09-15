@@ -165,10 +165,12 @@ public class DshServiceManager : IDisposable
     // ── 启动服务 ──
     public async Task StartServer()
     {
-        if (Child != null && !Child.HasExited) { Log.Info("server already running"); return; }
-        if (CurrentStatus == Status.Starting) return;
-        ManualStop = false;
-        SetStatus(Status.Starting, "启动 DSH 服务…");
+        try
+        {
+            if (Child != null && !Child.HasExited) { Log.Info("server already running"); return; }
+            if (CurrentStatus == Status.Starting) return;
+            ManualStop = false;
+            SetStatus(Status.Starting, "启动 DSH 服务…");
 
         StdoutTail.Clear();
         StderrTail.Clear();
@@ -252,6 +254,12 @@ public class DshServiceManager : IDisposable
             await Task.Delay(700);
         }
         SetStatus(Status.Error, $"等待 DSH 服务就绪超时 (http://{Host}:{TargetPort})");
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"StartServer 异常: {ex.Message}");
+            SetStatus(Status.Error, $"启动失败: {ex.Message}");
+        }
     }
 
     // ── 停止服务 ──
@@ -294,8 +302,7 @@ public class DshServiceManager : IDisposable
             SetStatus(Status.Running, "连接已有服务");
             return;
         }
-        // 配置是否启动
-        // caller 决定是否启动，这里只做连接检测
+        await StartServer();
     }
 
     // ── 状态设置 ──

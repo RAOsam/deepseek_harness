@@ -244,38 +244,39 @@ public class CrashRecovery : IDisposable
         while (i < lines.Count)
         {
             var line = lines[i];
-            result.Add(line);
             if (line.Trim() == "- insert:")
             {
-                // 收集块内的 id
+                // 收集整个块
+                var block = new List<string> { line };
                 string? blockId = null;
+                var nameLineIndex = -1;
+                var alreadyDisabled = false;
                 var j = i + 1;
-                while (j < lines.Count && lines[j].StartsWith(" ") && lines[j].Trim() != "- insert:")
+                while (j < lines.Count && (lines[j].StartsWith(" ") || lines[j].StartsWith("\t") || lines[j].Trim() == ""))
                 {
-                    var m = Regex.Match(lines[j].Trim(), @"^-\s+id:\s*(.+)$");
-                    if (m.Success) blockId = m.Groups[1].Value.Trim();
-                    // 检查是否已有 disabled: true
-                    if (Regex.IsMatch(lines[j].Trim(), @"^disabled:\s*true\s*$"))
-                        blockId = null; // 已经禁用了
+                    block.Add(lines[j]);
+                    var idMatch = Regex.Match(lines[j], @"^\s+- id:\s*(.+)$");
+                    if (idMatch.Success) blockId = idMatch.Groups[1].Value.Trim();
+                    if (Regex.IsMatch(lines[j], @"^\s+name:")) nameLineIndex = block.Count - 1;
+                    if (Regex.IsMatch(lines[j], @"^\s+disabled:\s*true\s*$")) alreadyDisabled = true;
                     j++;
                 }
-                // 如果块是有效的非核心插件，且尚未禁用，追加 disabled: true
-                if (blockId != null && !coreIds.Contains(blockId))
+                // 跳过皮肤条目（ui-skin-*），由皮肤切换器管理
+                // 跳过核心插件
+                // 已禁用或无法识别则不处理
+                if (blockId != null && !coreIds.Contains(blockId) && !blockId.StartsWith("ui-skin-") && nameLineIndex >= 0 && !alreadyDisabled)
                 {
-                    // 找到块内最后一个缩进级别，追加 disabled
-                    var lastIndent = "";
-                    for (var k = i + 1; k < j; k++)
-                    {
-                        if (!string.IsNullOrWhiteSpace(lines[k]))
-                            lastIndent = Regex.Match(lines[k], @"^(\s+)").Value;
-                    }
-                    // 缩进对齐：在块内最后一行后插入 disabled: true
-                    // 用 12 空格（与 main.js 的 disableNonCorePlugins 一致）
-                    var indent = "            ";
-                    result.Add($"{indent}disabled: true");
+                    var nameLine = block[nameLineIndex];
+                    var indent = Regex.Match(nameLine, @"^(\s*)").Value;
+                    block.Insert(nameLineIndex + 1, indent + "      disabled: true");
                     Log.Info($"[safe-mode] disabled plugin: {blockId}");
                 }
+                result.AddRange(block);
                 i = j - 1;
+            }
+            else
+            {
+                result.Add(line);
             }
             i++;
         }

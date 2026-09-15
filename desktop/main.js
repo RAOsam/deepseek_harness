@@ -822,7 +822,7 @@ function disableNonCorePlugins(content) {
         i++;
       }
       // 幂等：块内已有 disabled: true 则不重复插入（YAML 重复键是脏数据）
-      if (id && !coreIds.includes(id) && nameLineIndex >= 0 && !alreadyDisabled) {
+      if (id && !coreIds.includes(id) && !id.startsWith('ui-skin-') && nameLineIndex >= 0 && !alreadyDisabled) {
         const nameLine = block[nameLineIndex];
         const indent = nameLine.match(/^(\s*)/)[1];
         block.splice(nameLineIndex + 1, 0, indent + '      disabled: true');

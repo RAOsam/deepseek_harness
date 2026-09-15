@@ -19,6 +19,7 @@ public partial class App : Application
     public SkinWatcher SkinWatcher { get; private set; } = null!;
     private TaskbarIcon? _trayIcon;
     private MainWindow? _mainWindow;
+    private System.Windows.Controls.MenuItem? _crashStatusItem;
 
     // 用户数据目录
     private static readonly string UserDataDir = Path.Combine(
@@ -83,25 +84,29 @@ public partial class App : Application
         // 服务状态变化 → 托盘通知
         Server.StatusChanged += (status, detail) =>
         {
-            if (_trayIcon == null) return;
-            switch (status)
+            Dispatcher.Invoke(() =>
             {
-                case DshServiceManager.Status.Running:
-                    _trayIcon.ToolTipText = $"DeepSeek Harness Desktop — 运行中 ({Settings.Host}:{Settings.Port})";
-                    _trayIcon.ShowBalloonTip("DSH 服务", "服务已就绪", Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Info);
-                    break;
-                case DshServiceManager.Status.Error:
-                    _trayIcon.ToolTipText = $"DeepSeek Harness Desktop — 错误: {detail}";
-                    _trayIcon.ShowBalloonTip("DSH 服务", $"启动失败：{detail}", Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Error);
-                    break;
-                case DshServiceManager.Status.Stopped:
-                    _trayIcon.ToolTipText = "DeepSeek Harness Desktop — 已停止";
-                    _trayIcon.ShowBalloonTip("DSH 服务", "服务已停止", Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Info);
-                    break;
-                case DshServiceManager.Status.Starting:
-                    _trayIcon.ToolTipText = "DeepSeek Harness Desktop — 启动中...";
-                    break;
-            }
+                if (_trayIcon == null) return;
+                switch (status)
+                {
+                    case DshServiceManager.Status.Running:
+                        _trayIcon.ToolTipText = $"DeepSeek Harness Desktop — 运行中 ({Settings.Host}:{Settings.Port})";
+                        _trayIcon.ShowBalloonTip("DSH 服务", "服务已就绪", Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Info);
+                        break;
+                    case DshServiceManager.Status.Error:
+                        _trayIcon.ToolTipText = $"DeepSeek Harness Desktop — 错误: {detail}";
+                        _trayIcon.ShowBalloonTip("DSH 服务", $"启动失败：{detail}", Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Error);
+                        break;
+                    case DshServiceManager.Status.Stopped:
+                        _trayIcon.ToolTipText = "DeepSeek Harness Desktop — 已停止";
+                        _trayIcon.ShowBalloonTip("DSH 服务", "服务已停止", Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Info);
+                        break;
+                    case DshServiceManager.Status.Starting:
+                        _trayIcon.ToolTipText = "DeepSeek Harness Desktop — 启动中...";
+                        break;
+                }
+                UpdateCrashStatus();
+            });
         };
 
         // 初始化会话备份
@@ -162,22 +167,19 @@ public partial class App : Application
         // 启动服务（如配置允许）
         if (Settings.StartServerOnLaunch)
         {
-            _ = Server.EnsureServer().ContinueWith(async t =>
+            _ = Task.Run(async () =>
             {
-                // 如果端口有服务，直接连接；否则启动
-                if (Server.CurrentStatus == DshServiceManager.Status.Running)
+                try
                 {
-                    Log.Info("已连接至运行中的 DSH 服务");
-                    return;
-                }
-                await Server.StartServer();
-                // 如果服务启动成功且崩溃状态不是安全模式，启动 watchdog
-                if (Server.CurrentStatus == DshServiceManager.Status.Running)
-                {
-                    if (!Recovery.SafeModeActive)
+                    await Server.EnsureServer();
+                    if (Server.CurrentStatus == DshServiceManager.Status.Running && !Recovery.SafeModeActive)
                     {
                         Recovery.StartWatchdog();
                     }
+                }
+                catch (Exception ex)
+                {
+                    Log.Error($"EnsureServer 异常: {ex.Message}");
                 }
             });
         }
@@ -250,6 +252,23 @@ public partial class App : Application
         AddItem("启动安全模式", () => _ = Recovery.EnterSafeMode());
         AddItem("恢复正常模式", () => Recovery.ClearSafeMode());
         AddSeparator();
+        var crashStatusItem = new System.Windows.Controls.MenuItem
+        {
+            Header = "防护状态: 正常",
+            IsEnabled = false
+        };
+        menu.Items.Add(crashStatusItem);
+        _crashStatusItem = crashStatusItem;
+        AddItem("查看崩溃详情", () =>
+        {
+            var detail = $"连续崩溃: {Recovery.Consecutive} 次\n" +
+                         $"近60秒: {Recovery.Recent60} 次\n" +
+                         $"最近原因: {Recovery.LastCause ?? "无"}\n" +
+                         $"熔断器: {(Recovery.BreakerOpen ? "已断开" : "正常")}\n" +
+                         $"安全模式: {(Recovery.SafeModeActive ? "已激活" : "未激活")}";
+            _trayIcon?.ShowBalloonTip("DSH 防护状态", detail, Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Info);
+        });
+        AddSeparator();
         AddItem("清理 WebView2 缓存", () =>
         {
             _ = _mainWindow?.ClearCache();
@@ -273,6 +292,17 @@ public partial class App : Application
 
         // 双击托盘显示窗口
         _trayIcon.DoubleClickCommand = new RelayCommand(() => ShowWindow());
+    }
+
+    private void UpdateCrashStatus()
+    {
+        if (_crashStatusItem == null) return;
+        var parts = new List<string>();
+        if (Recovery.SafeModeActive) parts.Add("安全模式");
+        else if (Recovery.BreakerOpen) parts.Add("熔断已断开");
+        else if (Recovery.Consecutive > 0) parts.Add($"崩溃 {Recovery.Consecutive} 次");
+        else parts.Add("正常");
+        _crashStatusItem.Header = $"防护状态: {string.Join(" / ", parts)}";
     }
 
     private void ShowWindow()
