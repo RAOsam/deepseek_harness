@@ -215,7 +215,7 @@ window.__ModuleLoader__.load({
 				if (stats && stats.history && stats.history.length >= 1) {
 					// 多天/单天数据：柱状图（SVG）——每根柱子按当日消耗高度缩放；≤7 天时在柱顶显示数值
 					const items = stats.history;
-					const max = Math.max(0.01, ...items.map((x) => x.spend));
+					const max = Math.max(0.01, ...items.map((x) => x.spend || 0));
 					const n = items.length;
 					const W = 276, H = 76, PAD_X = 8, PAD_TOP = 16, PAD_BOT = 24;
 					const innerW = W - PAD_X * 2;

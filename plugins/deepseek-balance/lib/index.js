@@ -78,23 +78,37 @@ function computeStats(snapshots) {
     if (list) list.push(s);
     else byDay.set(k, [s]);
   }
+  // 单日消耗 = 相邻快照间所有「下降」之和。
+  // 用「首末差」会在余额中途充值、或当日回到原值时把消耗抹平；只累加下降段可避免。
+  // 同日少于 2 条快照无法判断，返回 null，与「确实没消耗」区分开。
   const daySpend = (day) => {
     const list = byDay.get(day);
-    if (!list || list.length < 2) return 0;
-    return Math.max(0, list[0].total - list[list.length - 1].total);
+    if (!list || list.length < 2) return null;
+    let sum = 0;
+    for (let i = 1; i < list.length; i++) {
+      const delta = list[i].total - list[i - 1].total;
+      if (delta < 0) sum += -delta;
+    }
+    return sum;
   };
+  const spendOrZero = (day) => daySpend(day) ?? 0;
   const now = Date.now();
   const days = [...byDay.keys()].sort();
   const today = dayKey(now);
   const weekStart = now - 7 * 86400000;
   const weekDays = days.filter((d) => new Date(`${d}T00:00:00`).getTime() >= weekStart);
-  const latest = snapshots.length ? snapshots[snapshots.length - 1] : null;
+  // 累计消耗同样按下降段累加，不受充值影响
+  let totalSpent = 0;
+  for (let i = 1; i < snapshots.length; i++) {
+    const delta = snapshots[i].total - snapshots[i - 1].total;
+    if (delta < 0) totalSpent += -delta;
+  }
   const first = snapshots.length ? snapshots[0] : null;
   return {
     todaySpend: daySpend(today),
-    weekSpend: weekDays.reduce((sum, d) => sum + daySpend(d), 0),
+    weekSpend: weekDays.reduce((sum, d) => sum + spendOrZero(d), 0),
     history: days.slice(-7).map((d) => ({ day: d, spend: daySpend(d) })),
-    sinceInstallSpend: latest && first ? Math.max(0, first.total - latest.total) : null,
+    sinceInstallSpend: snapshots.length >= 2 ? totalSpent : null,
     snapshotCount: snapshots.length,
     since: first ? first.ts : null,
   };
