@@ -76,7 +76,16 @@ window.__ModuleLoader__.load({
         '.pv2-sw-card-info{flex:1;min-width:0}',
         '.pv2-sw-card-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
         '.pv2-sw-card-desc{font-size:10px;color:var(--dsw-alias-label-tertiary,#888);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-        '.pv2-peak{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;cursor:default;font-size:12px;font-variant-numeric:tabular-nums}',
+        '.pv2-peak{flex:0 1 auto;min-width:0;align-items:center;display:flex;position:relative}',
+        '.pv2-peak-chip{box-sizing:border-box;min-width:0;height:42px;color:var(--dsw-alias-label-primary);border-radius:12px;align-items:center;gap:8px;padding:0 10px;font-family:inherit;font-size:14px;line-height:22px;display:inline-flex;overflow:hidden;cursor:default}',
+        '.pv2-peak-chip:hover{background:var(--dsw-alias-interactive-bg-hover)}',
+        '.pv2-peak-dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--dsw-alias-state-success-primary);transition:background var(--ds-transition-duration,.15s) var(--ds-ease-in-out,ease)}',
+        '.pv2-peak[data-peak=on] .pv2-peak-dot{background:var(--dsw-alias-state-warn-primary);animation:pv2-peak-pulse 2s var(--ds-ease-in-out,ease) infinite}',
+        '.pv2-peak-label{min-width:0;font-size:14px;line-height:22px;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;transition:color var(--ds-transition-duration,.15s) var(--ds-ease-in-out,ease)}',
+        '.pv2-peak[data-peak=on] .pv2-peak-label{color:var(--dsw-alias-state-warn-primary)}',
+        '.pv2-peak-time{flex:none;color:var(--dsw-alias-label-tertiary);font-size:14px;line-height:22px;font-variant-numeric:tabular-nums}',
+        '.pv2-peak.pv2-rail .pv2-peak-chip{border-radius:50%;justify-content:center;gap:0;width:36px;height:36px;padding:0}',
+        '@keyframes pv2-peak-pulse{0%,100%{opacity:1}50%{opacity:.35}}',
       ].join('\n');
       document.head.appendChild(style);
     }
@@ -284,26 +293,30 @@ window.__ModuleLoader__.load({
       for (var i = 0; i < PEAK_WINDOWS.length; i++) { if (cur >= PEAK_WINDOWS[i][0] && cur < PEAK_WINDOWS[i][1]) { inPeak = true; target = PEAK_WINDOWS[i][1]; label = '\u7ED3\u675F'; break; } }
       if (!inPeak) { for (var j = 0; j < PEAK_WINDOWS.length; j++) { if (cur < PEAK_WINDOWS[j][0]) { target = PEAK_WINDOWS[j][0]; label = '\u5F00\u59CB'; break; } } if (target === null) { target = 9 + 24; label = '\u5F00\u59CB'; } }
       var secs = Math.round((target - cur) * 3600);
-      return { inPeak: inPeak, text: (inPeak ? '\uD83D\uDD25' : '\u23F3') + fmtClock(secs) + (inPeak ? ' ' + label : '\uFF08' + String(target % 24).padStart(2, '0') + ':00 ' + label + '\uFF09') };
+      return { inPeak: inPeak, short: fmtClock(secs), text: fmtClock(secs) + (inPeak ? ' \u540E\u8F6C\u5165\u95F2\u65F6' : ' \u540E\u8FDB\u5165\u9AD8\u5CF0') };
     }
-    function PeakCountdown() {
+    function PeakCountdown(props) {
+      var wide = !!(props && props.wide);
       var _pk = React.useState(peakSnapshot), peak = _pk[0], setPeak = _pk[1];
       React.useEffect(function () { var t = setInterval(function () { setPeak(peakSnapshot()); }, 1000); return function () { clearInterval(t); }; }, []);
-      
-      var dotColor = peak.inPeak ? 'var(--dsw-color-warning, #f59e0b)' : 'var(--dsw-alias-label-tertiary)';
-      var label = peak.inPeak ? '高峰时段 · 价格是闲时 2 倍' : '闲时 · 价格是高峰的一半';
-      var animationName = peak.inPeak ? 'pv2-peak-pulse' : 'none';
-      
+
+      var tier = peak.inPeak ? '\u9AD8\u5CF0\u65F6\u6BB5' : '\u95F2\u65F6';
+      var tip = 'DeepSeek \u5CF0\u8C37\u5B9A\u4EF7\uFF1A\u9AD8\u5CF0\u65F6\u6BB5\uFF089:00-12:00\u300114:00-18:00\uFF09\u4EF7\u683C\u4E3A\u7A7A\u95F2\u65F6\u6BB5\u7684 2 \u500D\u3002'
+        + (peak.inPeak ? '\u5F53\u524D\u4E3A\u9AD8\u5CF0\uFF0C' : '\u5F53\u524D\u4E3A\u95F2\u65F6\uFF0C') + peak.text + '\u3002';
+
+      // 对齐官方 sidebar.footer.action 原生条目（.Nqubda_badge）的尺寸与令牌：
+      // 42px 行高、12px 圆角、14px 字号，标签在左、倒计时靠右对齐；
+      // 侧边栏收起（rail）时收成一个 36x36 的状态点。
+      var chip = React.createElement('div', { className: 'pv2-peak-chip' },
+        React.createElement('span', { className: 'pv2-peak-dot' }),
+        wide ? React.createElement('span', { className: 'pv2-peak-label' }, tier) : null,
+        wide ? React.createElement('span', { className: 'pv2-peak-time' }, peak.short) : null);
+
       return React.createElement('div', {
-        style: { textAlign: 'center', maxWidth: 'var(--dsh-chat-content-width)', width: '100%', padding: '2px calc(var(--dsh-composer-side-clearance) + 16px) 0px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', margin: '0 auto', fontSize: '12px', lineHeight: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', overflow: 'hidden', color: 'var(--dsw-alias-label-tertiary)' },
-        title: 'DeepSeek \u5CF0\u8C37\u5B9A\u4EF7\uFF1A\u9AD8\u5CF0\u65F6\u6BB5\uFF089:00-12:00\u300114:00-18:00\uFF09\u4EF7\u683C\u4E3A\u7A7A\u95F2\u65F6\u6BB5\u7684 2 \u500D'
-      },
-        React.createElement('style', { dangerouslySetInnerHTML: { __html: '@keyframes pv2-peak-pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.25);opacity:.7}}' } }),
-        React.createElement('span', { style: { width: '6px', height: '6px', borderRadius: '50%', background: dotColor, flex: 'none', animation: animationName + ' 2s ease-in-out infinite' } }),
-        React.createElement('span', null, peak.text),
-        React.createElement('span', { style: { color: 'var(--dsw-alias-separator-primary)', fontSize: '11px' } }, '·'),
-        React.createElement('span', { style: { fontSize: '11px' } }, label)
-      );
+        className: 'pv2-peak' + (wide ? '' : ' pv2-rail'),
+        'data-peak': peak.inPeak ? 'on' : 'off',
+        title: tip,
+      }, chip);
     }
 
     var inject = ['slots'];
@@ -312,7 +325,7 @@ window.__ModuleLoader__.load({
         var slots = ctx.slots;
         slots.inject('settings.section', function () { slots.register({ name: 'settings.section', id: 'persona-manager', order: 40, label: '\u4EBA\u8BBE' }, PersonaManager); });
         slots.inject('conversation.session.header.utilities', function () { slots.register({ name: 'conversation.session.header.utilities', id: 'persona-quick-switch', order: 20 }, PersonaQuickSwitch); });
-        slots.inject('conversation.composer.dock', function () { slots.register({ name: 'conversation.composer.dock', id: 'peak-countdown', order: 1 }, PeakCountdown); });
+        slots.inject('sidebar.footer.action', function () { slots.register({ name: 'sidebar.footer.action', id: 'peak-warning', order: 90 }, PeakCountdown); });
       } catch (err) { console.error('[dsh-persona-manager] apply failed:', err); }
     }
 
