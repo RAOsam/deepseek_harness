@@ -4,7 +4,7 @@
 
 ## 功能
 
-- **余额监控**：调用官方接口 `GET https://api.deepseek.com/user/balance`（文档见 <https://api-docs.deepseek.com/zh-cn/api/get-user-balance/>），展示总余额、充值余额、赠送余额、可用状态。
+- **余额监控**：调用官方接口 `GET https://api.deepseek.com/user/balance`（文档见 <https://api-docs.deepseek.com/zh-cn/api/get-user-balance/>），以**两行卡片**展示「充值余额」与「赠金余额」，样式与金额格式（两位小数 + 千分位分组）对齐官方设置页的账号余额卡片。
 - **用量统计**：每次成功查询把余额快照写入本地历史，据此计算 **今日消耗 / 近 7 天消耗 / 累计消耗（自启用以来）**，并渲染近 14 天消耗迷你柱状图。
 - **一键充值**：弹层内「充值 ↗」按钮直接打开官方充值页 <https://platform.deepseek.com/top_up>（服务端 302 跳转 / 新标签页打开）。
 - **自动刷新**：挂载时 + 每 60 秒自动轮询（服务端对官方接口做 ≥30s 节流，避免频繁调用）。

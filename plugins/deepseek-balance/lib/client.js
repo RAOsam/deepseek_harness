@@ -16,60 +16,80 @@ window.__ModuleLoader__.load({
 .dsb-trigger {
 	display: flex; align-items: center; gap: 6px;
 	width: 100%; min-width: 0; padding: 6px 8px;
-	border: 1px solid transparent; border-radius: 8px;
-	background: transparent; color: inherit; font: inherit; font-size: 12px;
+	border: 1px solid transparent; border-radius: var(--dsw-radius-sm, 8px);
+	background: transparent; color: var(--dsw-alias-label-primary, inherit); font: inherit; font-size: 12px;
 	cursor: pointer; text-align: left; overflow: hidden; white-space: nowrap;
 }
-.dsb-trigger:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
-.dsb-trigger:focus-visible { outline: 2px solid #4d6bfe; outline-offset: 1px; }
+.dsb-trigger:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.dsb-trigger:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
 .dsb-rail { justify-content: center; width: 36px; height: 36px; padding: 0; }
 .dsb-balance { font-variant-numeric: tabular-nums; font-weight: 600; }
 .dsb-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
-.dsb-dot.ok { background: #3fb950; }
-.dsb-dot.low { background: #d29922; }
-.dsb-dot.crit { background: #f85149; }
-.dsb-dot.err { background: #f85149; animation: dsb-blink 1.2s infinite; }
+.dsb-dot.ok { background: var(--dsw-alias-state-success-primary, #3fb950); }
+.dsb-dot.low { background: var(--dsw-alias-state-warn-primary, #d29922); }
+.dsb-dot.crit, .dsb-dot.err { background: var(--dsw-alias-state-error-primary, #f85149); }
+.dsb-dot.err { animation: dsb-blink 1.2s infinite; }
 @keyframes dsb-blink { 50% { opacity: .25; } }
-.dsb-spinner { width: 12px; height: 12px; border: 2px solid color-mix(in srgb, currentColor 30%, transparent); border-top-color: currentColor; border-radius: 50%; animation: dsb-spin .8s linear infinite; }
+.dsb-spinner { width: 12px; height: 12px; border: 2px solid var(--dsw-alias-border-l3, currentColor); border-top-color: var(--dsw-alias-label-primary, currentColor); border-radius: 50%; animation: dsb-spin .8s linear infinite; }
 @keyframes dsb-spin { to { transform: rotate(360deg); } }
+
+/* 弹层：对齐官方面板材质（specific-menu + border-inverted + shadow-lv3 + radius-md） */
 .dsb-pop {
 	position: fixed; z-index: 99999; width: 300px; max-width: calc(100vw - 16px);
-	background: color-mix(in srgb, Canvas 96%, transparent);
-	color: CanvasText;
-	border: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
-	border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.28);
+	background: var(--dsw-specific-menu, Canvas);
+	color: var(--dsw-alias-label-primary, CanvasText);
+	border: 1px solid var(--dsw-alias-border-inverted, rgba(128,128,128,.3));
+	border-radius: var(--dsw-radius-md, 12px);
+	box-shadow: var(--dsw-shadow-lv3, 0 8px 28px rgba(0,0,0,.28));
 	font-size: 12px; line-height: 1.5;
 }
 .dsb-pop-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px 8px; font-weight: 700; }
-.dsb-pop-close { border: none; background: transparent; color: inherit; cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 6px; }
-.dsb-pop-close:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+.dsb-pop-close { border: none; background: transparent; color: inherit; cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: var(--dsw-radius-xs, 6px); }
+.dsb-pop-close:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .dsb-pop-body { padding: 4px 12px 12px; }
-.dsb-total { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.dsb-sub { color: color-mix(in srgb, CanvasText 62%, transparent); margin-top: 2px; }
+
+/* 余额卡片：逐项对齐官方 AccountSection.module.css（_8RVnMG_balanceCard / _row / _actions / _linkButton） */
+.dsb-card {
+	border: .5px solid var(--dsw-alias-settings-card-stroke, var(--dsw-alias-border-l4, rgba(128,128,128,.25)));
+	border-radius: var(--dsw-radius-xl, 20px);
+	background: var(--dsw-alias-settings-card-fill, var(--dsw-alias-bg-layer-2, transparent));
+	padding: 12px 16px;
+	display: flex; flex-direction: column; gap: 8px;
+}
+.dsb-row { box-sizing: border-box; min-height: 40px; padding: 6px 0; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.dsb-row-label { color: var(--dsw-alias-label-primary, inherit); font-size: 13px; line-height: 22px; }
+.dsb-row-value { font-size: 14px; font-weight: 500; line-height: 22px; font-variant-numeric: tabular-nums; }
+.dsb-divider { border-top: .5px solid var(--dsw-alias-border-l2); }
+.dsb-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 10px; }
+.dsb-link-button {
+	box-sizing: border-box; display: inline-flex; justify-content: center; align-items: center;
+	min-width: 58px; height: 36px; padding: 0 14px;
+	border: .5px solid var(--dsw-alias-border-l3, rgba(128,128,128,.35));
+	border-radius: var(--dsw-radius-md, 12px);
+	background: 0 0; color: var(--dsw-alias-label-primary, inherit);
+	font: inherit; font-size: 14px; line-height: 22px; white-space: nowrap; flex: none;
+	cursor: pointer; text-decoration: none;
+}
+.dsb-link-button:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.dsb-link-button:disabled { opacity: .45; cursor: default; }
+.dsb-link-button.dsb-primary { color: var(--dsw-alias-label-primary-foreground, #fff); background: var(--dsw-alias-button-primary-fill); border-color: transparent; font-weight: 500; }
+.dsb-link-button.dsb-primary:hover { background: var(--dsw-alias-button-primary-hover); }
+
+/* 用量统计与图表：官方没有，插件独有，沿用官方令牌 */
 .dsb-stats { margin-top: 10px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-.dsb-stat { background: color-mix(in srgb, currentColor 6%, transparent); border-radius: 8px; padding: 6px 8px; }
+.dsb-stat { background: var(--dsw-alias-interactive-bg-hover); border-radius: var(--dsw-radius-sm, 8px); padding: 6px 8px; }
 .dsb-stat b { display: block; font-variant-numeric: tabular-nums; font-size: 13px; }
-.dsb-stat span { color: color-mix(in srgb, CanvasText 58%, transparent); font-size: 11px; }
-.dsb-chart { margin-top: 10px; display: flex; align-items: flex-end; gap: 3px; height: 76px; border-bottom: 1px solid color-mix(in srgb, CanvasText 12%, transparent); }
+.dsb-stat span { color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+.dsb-chart { margin-top: 10px; display: flex; align-items: flex-end; gap: 3px; height: 76px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
 .dsb-bar-col { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; }
-.dsb-bar { opacity: .78; }
+.dsb-bar { fill: var(--dsw-alias-brand-primary, #4d6bfe); opacity: .78; }
 .dsb-bar:hover { opacity: 1; }
-.dsb-bar-val { font-size: 9px; line-height: 1; white-space: nowrap; color: color-mix(in srgb, CanvasText 70%, transparent); }
-.dsb-bar-full { flex: 0 1 auto; width: 100%; max-width: 56px; margin: 0 auto; }
 .dsb-line { width: 100%; height: 100%; display: block; overflow: visible; }
-.dsb-line-path { fill: none; stroke: #4d6bfe; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-.dsb-area { fill: #4d6bfe; opacity: .12; }
-.dsb-dot2 { fill: #4d6bfe; stroke: color-mix(in srgb, Canvas 75%, transparent); stroke-width: 1; }
-.dsb-val { font-size: 9px; fill: color-mix(in srgb, CanvasText 70%, transparent); text-anchor: middle; }
-.dsb-date { font-size: 8px; fill: color-mix(in srgb, CanvasText 50%, transparent); text-anchor: middle; }
-.dsb-chart-empty { margin-top: 10px; height: 60px; display: flex; align-items: center; justify-content: center; color: color-mix(in srgb, CanvasText 45%, transparent); border-bottom: 1px dashed color-mix(in srgb, CanvasText 15%, transparent); font-size: 11px; }
-.dsb-err { color: #f85149; background: color-mix(in srgb, #f85149 10%, transparent); border-radius: 8px; padding: 8px 10px; margin-top: 8px; }
-.dsb-actions { margin-top: 10px; display: flex; gap: 8px; }
-.dsb-btn { flex: 1; padding: 8px 10px; border-radius: 8px; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); background: transparent; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
-.dsb-btn:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
-.dsb-btn.primary { background: #4d6bfe; border-color: #4d6bfe; color: #fff; }
-.dsb-btn.primary:hover { background: #3f5cf0; }
-.dsb-note { margin-top: 8px; color: color-mix(in srgb, CanvasText 45%, transparent); font-size: 11px; }
+.dsb-val { font-size: 9px; fill: var(--dsw-alias-label-tertiary); text-anchor: middle; }
+.dsb-date { font-size: 8px; fill: var(--dsw-alias-label-tertiary); text-anchor: middle; }
+.dsb-chart-empty { margin-top: 10px; height: 60px; display: flex; align-items: center; justify-content: center; color: var(--dsw-alias-label-tertiary); border-bottom: 1px dashed var(--dsw-alias-border-l2); font-size: 11px; }
+.dsb-err { color: var(--dsw-alias-state-error-primary, #f85149); background: var(--dsw-alias-interactive-bg-hover-danger, rgba(248,81,73,.1)); border-radius: var(--dsw-radius-sm, 8px); padding: 8px 10px; margin-top: 8px; font-size: 12px; line-height: 18px; }
+.dsb-note { margin-top: 8px; color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 16px; }
 `;
 			(document.head || document.documentElement).appendChild(style);
 		}
@@ -82,8 +102,9 @@ window.__ModuleLoader__.load({
 		const CRIT_THRESHOLD = 1;
 
 		const fmt = (n, currency) => {
-			if (n === null || n === undefined || Number.isNaN(n)) return "—";
-			const s = (Number(n) || 0).toFixed(2);
+			if (n === null || n === undefined || !Number.isFinite(Number(n))) return "—";
+			// 官方金额格式：两位小数 + 千分位分组
+			const s = Number(n).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 			return (currency === "USD" ? "$" : "¥") + s;
 		};
 
@@ -211,7 +232,7 @@ window.__ModuleLoader__.load({
 						const y = PAD_TOP + innerH - barH;
 						nodes.push(React.createElement("g", { key: h.day },
 							React.createElement("title", null, h.day + " 消耗 " + fmt(h.spend, balance.currency)),
-							React.createElement("rect", { x, y, width: barW, height: barH, rx: 2, fill: "#4d6bfe", className: "dsb-bar" }),
+							React.createElement("rect", { x, y, width: barW, height: barH, rx: 2, className: "dsb-bar" }),
 							labelAll ? React.createElement("text", { x: x + barW / 2, y: Math.max(9, y - 4), className: "dsb-val" }, fmt(h.spend, balance.currency)) : null,
 							React.createElement("text", { x: x + barW / 2, y: H - 4, className: "dsb-date" }, n <= 7 ? fmtDay(h.day) : fmtDayShort(h.day))));
 					});
@@ -223,10 +244,29 @@ window.__ModuleLoader__.load({
 				body = React.createElement(
 					React.Fragment,
 					null,
-					React.createElement("div", { className: "dsb-total" }, fmt(balance.total, balance.currency)),
-					React.createElement("div", { className: "dsb-sub" },
-						"充值余额 " + fmt(balance.toppedUp, balance.currency) + " · 赠送余额 " + fmt(balance.granted, balance.currency) +
-						(balance.isAvailable ? " · 可用" : " · 不可用")),
+					React.createElement("div", { className: "dsb-card" },
+						React.createElement("div", { className: "dsb-row" },
+							React.createElement("span", { className: "dsb-row-label" }, "充值余额"),
+							React.createElement("span", { className: "dsb-row-value" }, fmt(balance.toppedUp, balance.currency))),
+						Number(balance.granted) > 0 || loading || !balance.isAvailable
+							? React.createElement("div", { className: "dsb-row" },
+								React.createElement("span", { className: "dsb-row-label" }, "赠金余额"),
+								React.createElement("span", { className: "dsb-row-value" }, fmt(balance.granted, balance.currency)))
+							: null,
+						!balance.isAvailable
+							? React.createElement(React.Fragment, null,
+								React.createElement("div", { className: "dsb-divider" }),
+								React.createElement("div", { className: "dsb-row" },
+									React.createElement("span", { className: "dsb-row-label" }, "账户状态"),
+									React.createElement("a", { className: "dsb-row-value", href: "https://platform.deepseek.com/usage", target: "_blank", rel: "noopener noreferrer" }, "前往开放平台查看")))
+							: null,
+						React.createElement("div", { className: "dsb-actions" },
+							React.createElement("button", { type: "button", className: "dsb-link-button", onClick: () => load("balance"), disabled: loading },
+								loading ? "刷新中…" : "刷新"),
+							React.createElement("a", {
+								className: "dsb-link-button dsb-primary",
+								href: view.topUpUrl || TOP_UP_URL, target: "_blank", rel: "noopener noreferrer",
+							}, "充值"))),
 					React.createElement("div", { className: "dsb-stats" },
 						React.createElement("div", { className: "dsb-stat" },
 							React.createElement("b", null, fmt(stats ? stats.todaySpend : null, balance.currency)),
@@ -237,15 +277,7 @@ window.__ModuleLoader__.load({
 						React.createElement("div", { className: "dsb-stat" },
 							React.createElement("b", null, fmt(stats ? stats.sinceInstallSpend : null, balance.currency)),
 							React.createElement("span", null, "累计(自启用)"))),
-					chart,
-					React.createElement("div", { className: "dsb-actions" },
-						React.createElement("button", { type: "button", className: "dsb-btn", onClick: () => load("balance"), disabled: loading },
-							loading ? "刷新中…" : "刷新"),
-						React.createElement("button", {
-							type: "button",
-							className: "dsb-btn primary",
-							onClick: () => { window.open(view.topUpUrl || TOP_UP_URL, "_blank", "noopener,noreferrer"); },
-						}, "充值 ↗"))
+					chart
 				);
 				} else {
 					body = React.createElement(
@@ -254,13 +286,13 @@ window.__ModuleLoader__.load({
 						React.createElement("div", { className: "dsb-err" },
 							showErr && errText ? errText : (loading ? "正在查询余额…" : "余额暂不可用")),
 						React.createElement("div", { className: "dsb-actions" },
-							React.createElement("button", { type: "button", className: "dsb-btn", onClick: () => load("balance"), disabled: loading },
+							React.createElement("a", { className: "dsb-link-button", href: "https://platform.deepseek.com/usage", target: "_blank", rel: "noopener noreferrer" }, "前往开放平台查看"),
+							React.createElement("button", { type: "button", className: "dsb-link-button", onClick: () => load("balance"), disabled: loading },
 								loading ? "刷新中…" : "重试"),
-							React.createElement("button", {
-								type: "button",
-								className: "dsb-btn primary",
-								onClick: () => { window.open((view && view.topUpUrl) || TOP_UP_URL, "_blank", "noopener,noreferrer"); },
-							}, "充值 ↗"))
+							React.createElement("a", {
+								className: "dsb-link-button dsb-primary",
+								href: (view && view.topUpUrl) || TOP_UP_URL, target: "_blank", rel: "noopener noreferrer",
+							}, "充值"))
 					);
 				}
 				const note = React.createElement("div", { className: "dsb-note" },
