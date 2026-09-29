@@ -1,0 +1,9 @@
+# dsh-prompt-enhancer bundle patch — one dual-face row:
+#   - the host half serves the knowledge-base retrieval / prompt-augmentation routes;
+#   - the client half (exports["./client"]) renders a settings section with
+#     id `prompt-enhancer` (label 提示词增强) through the `settings.section` slot.
+# To disable the plugin: set `disabled: true` on this row (or remove the bundle from
+# dsh.profile.bundles in the profile's package.json).
+- insert:
+    - id: prompt-enhancer
+      name: dsh-prompt-enhancer

@@ -1,0 +1,12 @@
+# dsh-persona-manager bundle patch — one dual-face row:
+#   - the host half owns persona CRUD and injects the active persona into the system prompt;
+#   - the client half (exports["./client"]) registers three slots:
+#     `settings.section` (id persona-manager, label 人设),
+#     `conversation.session.header.utilities` (id persona-quick-switch), and
+#     `sidebar.footer.action` (id peak-warning — the 峰谷 countdown chip, which sits
+#     beside the deepseek-balance widget in the sidebar footer).
+# To disable the plugin: set `disabled: true` on this row (or remove the bundle from
+# dsh.profile.bundles in the profile's package.json).
+- insert:
+    - id: dsh-persona-manager
+      name: dsh-persona-manager

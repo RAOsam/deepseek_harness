@@ -1,0 +1,9 @@
+# dsh-memory bundle patch — one dual-face row:
+#   - the host half registers the memory store and the AI tools (memory_save / memory_search);
+#   - the client half (exports["./client"]) renders a settings section with
+#     id `memory-manager` (label 记忆) through the `settings.section` slot.
+# To disable the plugin: set `disabled: true` on this row (or remove the bundle from
+# dsh.profile.bundles in the profile's package.json).
+- insert:
+    - id: dsh-memory
+      name: dsh-memory
