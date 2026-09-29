@@ -626,7 +626,6 @@ async function restartServer() {
   }
   isRecovering = true;
   try {
-    backupSession('pre-restart'); // safety net: snapshot the conversation first
     await stopServer();
     await releasePort(settings.port);
     await new Promise((r) => setTimeout(r, 600));
@@ -946,101 +945,6 @@ function registerIpc() {
     if (typeof msg === 'string' && msg.length < 2000) log('[page] ' + msg);
   });
 
-  // ---- conversation safety net: backup / rollback / restore ----
-  ipcMain.handle('dsh:session-backup', () => {
-    const file = backupSession('manual');
-    return file ? { ok: true, file } : { ok: false, error: '找不到当前会话文件' };
-  });
-  ipcMain.handle('dsh:session-restore', async () => restoreSession());
-  ipcMain.handle('dsh:session-rollback', async () => rollbackSession());
-}
-
-// ---------------------------------------------------- conversation backups ----
-function sessionBackupDir() {
-  return path.join(app.getPath('userData'), 'session-backups');
-}
-
-async function restoreSession() {
-  if (server.status !== 'running') {
-    await startServer();
-  }
-  const ok = server.status === 'running';
-  if (ok && dshView && !dshView.webContents.isDestroyed()) {
-    dshView.webContents.reload();
-  }
-  return { ok, status: server.status };
-}
-
-async function rollbackSession() {
-  const dir = sessionBackupDir();
-  let backups = [];
-  try { backups = fs.readdirSync(dir).filter((f) => f.endsWith('.zstd')).sort(); } catch { /* none yet */ }
-  if (backups.length === 0) return { ok: false, error: '没有可回退的备份（先点「备份」或等自动备份）' };
-  const src = findSessionFile();
-  if (!src) return { ok: false, error: '找不到当前会话文件' };
-  backupSession('pre-rollback'); // safety copy of the live file first
-  const newest = path.join(dir, backups[backups.length - 1]);
-  try {
-    await stopServer();
-    await releasePort(settings.port);
-    fs.copyFileSync(newest, src);
-    await new Promise((r) => setTimeout(r, 600));
-    await startServer();
-    if (dshView && !dshView.webContents.isDestroyed()) dshView.webContents.reload();
-    return { ok: server.status === 'running', file: newest };
-  } catch (err) {
-    log('rollback failed: ' + err.message);
-    return { ok: false, error: String(err.message || err) };
-  }
-}
-
-// The most recently modified session store under $DSH_HOME/sessions — the
-// harness writes session.jsonl.zstd per active session (append-only frames).
-function findSessionFile() {
-  const home = process.env.DSH_HOME || path.join(process.env.USERPROFILE || process.env.HOME || '', '.dsh');
-  const root = path.join(home, 'sessions');
-  let best = null;
-  const walk = (dir) => {
-    let entries;
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      const full = path.join(dir, e.name);
-      if (e.isDirectory()) walk(full);
-      else if (e.name === 'session.jsonl.zstd') {
-        try {
-          const st = fs.statSync(full);
-          if (!best || st.mtimeMs > best.mtimeMs) best = { path: full, mtimeMs: st.mtimeMs };
-        } catch { /* skip */ }
-      }
-    }
-  };
-  try { walk(root); } catch { /* no sessions yet */ }
-  return best ? best.path : null;
-}
-
-// Copy the live session file into userData/session-backups (keep the newest 24).
-function backupSession(tag) {
-  const src = findSessionFile();
-  if (!src) return null;
-  const dir = sessionBackupDir();
-  try {
-    fs.mkdirSync(dir, { recursive: true });
-    const name = tag + '-' + new Date().toISOString().replace(/[:.]/g, '-') + '.zstd';
-    const dst = path.join(dir, name);
-    fs.copyFileSync(src, dst);
-    const all = fs.readdirSync(dir).filter((f) => f.endsWith('.zstd')).sort();
-    while (all.length > 24) fs.unlinkSync(path.join(dir, all.shift()));
-    log('session backup -> ' + name);
-    return dst;
-  } catch (err) {
-    log('backup failed: ' + err.message);
-    return null;
-  }
-}
-
-function startSessionBackup() {
-  // periodic safety net + a backup before every service restart
-  setInterval(() => { backupSession('auto'); }, 5 * 60 * 1000);
 }
 
 // Resolve a client-supplied path (absolute or relative) under the workspace
@@ -1077,14 +981,7 @@ function startSessionToolsServer() {
     };
     let pathname = '/';
     try { pathname = new URL(req.url || '/', 'http://x').pathname; } catch { /* keep / */ }
-    if (pathname === '/backup') {
-      const file = backupSession('gui');
-      send(file ? { ok: true, file } : { ok: false, error: '找不到当前会话文件' });
-    } else if (pathname === '/restore') {
-      restoreSession().then(send).catch((e) => send({ ok: false, error: String(e.message || e) }));
-    } else if (pathname === '/rollback') {
-      rollbackSession().then(send).catch((e) => send({ ok: false, error: String(e.message || e) }));
-    } else if (pathname === '/open') {
+    if (pathname === '/open') {
       // open a workspace file/folder with its default handler (GUI file tree)
       const abs = resolveBridgePath(new URL(req.url || '/', 'http://x').searchParams.get('path') || '');
       if (!abs) { send({ ok: false, error: '路径不在工作区内' }, 403); return; }
@@ -1243,7 +1140,6 @@ if (!gotLock) {
     createWindow();
     createTray();
     startSkinPolling();
-    startSessionBackup();
     startSessionToolsServer();
     // 恢复上次会话的崩溃状态（含安全模式）与熔断器
     try {

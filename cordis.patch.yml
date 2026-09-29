@@ -14,11 +14,6 @@
     - id: dsh-skin-switch
       name: '@deepseek-ai/dsh-skin-switch'
 
-# dsh-session-tools (会话工具)
-- insert:
-    - id: dsh-session-tools
-      name: 'dsh-session-tools'
-
 # dsh-persona-manager (人设管理)
 - insert:
     - id: dsh-persona-manager

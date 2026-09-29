@@ -52,9 +52,6 @@ API Key：dashscope.aliyuncs.com/compatible-mode/v1
 |---|---|---|
 | /health | GET | 健康检查（三层探针） |
 | /info | GET | 应用信息 |
-| /backup | GET | 备份当前会话 |
-| /restore | GET | 恢复会话 + 重载 GUI |
-| /rollback | GET | 回滚到最近备份 |
 | /restart | GET | 重启 DSH 服务（60s 限流 3 次） |
 | /open?path= | GET | 打开文件 |
 | /reveal?path= | GET | 在资源管理器中显示文件 |

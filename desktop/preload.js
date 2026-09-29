@@ -34,11 +34,6 @@ contextBridge.exposeInMainWorld('dshDesktop', {
     return () => ipcRenderer.removeListener('dsh:skin-info', listener);
   },
 
-  // conversation safety net
-  sessionBackup: () => ipcRenderer.invoke('dsh:session-backup'),
-  sessionRollback: () => ipcRenderer.invoke('dsh:session-rollback'),
-  sessionRestore: () => ipcRenderer.invoke('dsh:session-restore'),
-
   // main -> renderer subscription (returns an unsubscribe function)
   onServerStatus: (callback) => {
     const listener = (_event, status) => callback(status);

@@ -20,7 +20,6 @@ public class CrashRecovery : IDisposable
     private readonly CircuitBreaker _breaker = new("restart", failThreshold: 0.4, requestThreshold: 3, openMs: 60_000);
     private readonly RateLimiter _restartLimiter = new(3, 60_000);
     private CancellationTokenSource? _watchdogCts;
-    private SessionBackup? _backup;
     private bool _disposed;
 
     // 崩溃状态
@@ -31,9 +30,6 @@ public class CrashRecovery : IDisposable
     public long CooldownUntil { get; private set; }
     public bool BreakerOpen => _breaker.Status == "OPEN";
     public RateLimiter RestartLimiter => _restartLimiter;
-
-    /// <summary>设置备份引擎（在 CrashRecovery 创建后由 App 注入）。</summary>
-    public void SetBackup(SessionBackup backup) => _backup = backup;
 
     public CrashRecovery(DshServiceManager server, CrashStateStore stateStore, string? profileDir)
     {
@@ -162,13 +158,6 @@ public class CrashRecovery : IDisposable
         var delayMs = Math.Min((int)Math.Pow(2, Consecutive - 1) * 1000, 60_000);
         Log.Info($"[anticrash] cause={cause} consecutive={Consecutive} recent60={Recent60}");
         Log.Info($"[anticrash] auto-restart in {delayMs}ms (cause={cause})");
-
-        // 重启前自动备份会话
-        if (_backup != null)
-        {
-            try { await _backup.Backup(); }
-            catch (Exception e) { Log.Warn($"[anticrash] backup before restart failed: {e.Message}"); }
-        }
 
         await Task.Delay(delayMs + 500); // 额外等 500ms 确保端口释放
 

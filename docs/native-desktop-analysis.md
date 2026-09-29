@@ -155,8 +155,8 @@ DeepSeek Harness Native.exe（壳：Tauri/.NET）
 ### Phase 1 — 壳功能移植（2-3 周）
 1. 迁移：托盘菜单、开机自启、窗口细节（标题/图标/最小化到托盘）
 2. 迁移：**防崩溃体系**（spawn/退出归因/退避重启/自动安全模式/watchdog/熔断限流/健康探针）——逻辑照搬，语言重写
-3. 迁移：3090 HTTP 桥（backup/restore/rollback/restart/health）或改 WebView2 直连
-4. 会话备份、皮肤感知（读 patch.yml 换背景）
+3. 迁移：3090 HTTP 桥（restart/health/open/reveal/dom）或改 WebView2 直连
+4. 皮肤感知（读 patch.yml 换背景）
    - 验证：`test-anticrash-deep.js` 的 13 个场景在 Rust/C# 侧等价重写并全过
 
 ### Phase 2 — 运行时与分发（1-2 周）

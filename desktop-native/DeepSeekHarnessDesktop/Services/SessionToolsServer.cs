@@ -11,13 +11,12 @@ using System.Threading.Tasks;
 
 namespace DeepSeekHarnessDesktop.Services;
 
-/// <summary>3090 HTTP 桥（对应 Electron 版 session-tools 的 HTTP server：health/backup/restore/rollback/restart/open/reveal/dom）。</summary>
+/// <summary>3090 HTTP 桥（对应 Electron 版 session-tools 的 HTTP server：health/info/restart/open/reveal/dom）。</summary>
 public class SessionToolsServer : IDisposable
 {
     private readonly HttpListener _listener = new();
     private readonly DshServiceManager _server;
     private readonly CrashRecovery _recovery;
-    private readonly SessionBackup _backup;
     private readonly AppSettings _settings;
     private readonly int _port;
     private CancellationTokenSource? _cts;
@@ -26,14 +25,10 @@ public class SessionToolsServer : IDisposable
     /// <summary>由 MainWindow 注入，用于 /dom 端点在 WebView2 中执行 JS。</summary>
     public Func<string, Task<string>>? DomExecutor { get; set; }
 
-    /// <summary>恢复/回滚后的回调（用于刷新页面等）。</summary>
-    public Action? OnSessionRestored { get; set; }
-
-    public SessionToolsServer(DshServiceManager server, CrashRecovery recovery, SessionBackup backup, AppSettings settings, int port = 3090)
+    public SessionToolsServer(DshServiceManager server, CrashRecovery recovery, AppSettings settings, int port = 3090)
     {
         _server = server;
         _recovery = recovery;
-        _backup = backup;
         _settings = settings;
         _port = port;
     }
@@ -91,17 +86,6 @@ public class SessionToolsServer : IDisposable
                     break;
                 case "/info":
                     json = HandleInfo();
-                    break;
-                case "/backup":
-                    json = await _backup.Backup();
-                    break;
-                case "/restore":
-                    json = await _backup.Restore();
-                    OnSessionRestored?.Invoke();
-                    break;
-                case "/rollback":
-                    json = await _backup.Rollback();
-                    OnSessionRestored?.Invoke();
                     break;
                 case "/restart":
                     json = await HandleRestart();

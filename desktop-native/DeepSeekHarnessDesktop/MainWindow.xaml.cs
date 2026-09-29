@@ -205,15 +205,6 @@ public partial class MainWindow : Window
       var img = new Image();
       img.src = BASE + '/dom?q=' + encodeURIComponent('console.error(' + JSON.stringify(String(msg).slice(0,500)) + ')');
     },
-    sessionBackup: function() {
-      return fetch(BASE + '/backup', { cache: 'no-store' }).then(function(r) { return r.json(); });
-    },
-    sessionRollback: function() {
-      return fetch(BASE + '/rollback', { cache: 'no-store' }).then(function(r) { return r.json(); });
-    },
-    sessionRestore: function() {
-      return fetch(BASE + '/restore', { cache: 'no-store' }).then(function(r) { return r.json(); });
-    },
     onServerStatus: function(callback) {
       statusListeners.push(callback);
       return function() {

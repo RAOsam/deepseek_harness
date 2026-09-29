@@ -15,7 +15,6 @@ public partial class App : Application
     public DshServiceManager Server { get; private set; } = null!;
     public CrashRecovery Recovery { get; private set; } = null!;
     public SessionToolsServer ToolsServer { get; private set; } = null!;
-    public SessionBackup Backup { get; private set; } = null!;
     public SkinWatcher SkinWatcher { get; private set; } = null!;
     private TaskbarIcon? _trayIcon;
     private MainWindow? _mainWindow;
@@ -109,15 +108,11 @@ public partial class App : Application
             });
         };
 
-        // 初始化会话备份
-        Backup = new SessionBackup(UserDataDir, ProfileDir);
-        Recovery.SetBackup(Backup);
-
         // 初始化皮肤感知
         SkinWatcher = new SkinWatcher(ProfileDir);
 
         // 初始化 3090 桥
-        ToolsServer = new SessionToolsServer(Server, Recovery, Backup, Settings, 3090);
+        ToolsServer = new SessionToolsServer(Server, Recovery, Settings, 3090);
 
         // 创建主窗口
         _mainWindow = new MainWindow(Server, Recovery);
@@ -132,15 +127,6 @@ public partial class App : Application
                 return await _mainWindow.Browser.CoreWebView2.ExecuteScriptAsync(js) ?? "null";
             });
             return result;
-        };
-
-        // 会话恢复/回滚后 → 刷新页面（对应 Electron 的 restoreSession 中 reload）
-        ToolsServer.OnSessionRestored = () =>
-        {
-            _mainWindow?.Dispatcher.Invoke(() =>
-            {
-                try { _mainWindow?.Browser?.Reload(); } catch { }
-            });
         };
 
         // 皮肤变化 → 广播到 WebView2
