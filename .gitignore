@@ -13,6 +13,7 @@ desktop/release/
 
 # Temp
 *.zstd
+*.bak-*
 
 # OS
 Thumbs.db

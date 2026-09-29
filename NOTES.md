@@ -28,9 +28,7 @@
 - **CDP 调试**：`settings.json` 里 `debugPort: 9222`（永久开启）。
   main.js 在 app ready 前先 loadSettings 再 `appendSwitch('remote-debugging-port', ...)`。
   用 Chrome/Edge `chrome://inspect` 调试 GUI 页面。`/dom` 端点可远程读 GUI DOM。
-- **3090 桥端点**：`/backup` `/restore` `/rollback` `/health` `/open` `/reveal` `/dom`。
-- **会话安全网**：`userData/session-backups/`，5 分钟自动备份 + 重启前备份（保留 24 份）；
-  GUI 的 ⟲回退/⟳恢复按钮（`dsh-session-tools` 插件）走 3090 桥。
+- **3090 桥端点**：`/health` `/info` `/restart` `/open` `/reveal` `/dom`。
 - **皮肤**：maid-atelier（深海女仆工坊）永久启用，patch 行 `ui-skin-maid-atelier`。
   `dsh-skin-switch` 插件负责皮肤切换（重启服务生效）。
 - **人设**：`dsh-persona-manager` 插件，设置页面「人设」+ session header 快速切换。

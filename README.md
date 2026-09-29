@@ -6,7 +6,7 @@
 
 > 一个 Windows 桌面客户端 + 插件生态系统，基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 构建。
 
-DSH 将 DeepSeek AI 的 Web GUI 封装为完整的桌面体验 —— 系统托盘管理、自动服务生命周期、会话备份/回滚，以及不断扩展的插件生态。
+DSH 将 DeepSeek AI 的 Web GUI 封装为完整的桌面体验 —— 系统托盘管理、自动服务生命周期，以及不断扩展的插件生态。
 
 ---
 
@@ -34,7 +34,7 @@ DSH 将 DeepSeek AI 的 Web GUI 封装为完整的桌面体验 —— 系统托�
 - `MainWindow.xaml.cs` — WebView2 GUI 宿主
 - `App.xaml.cs` — 托盘菜单、服务生命周期管理
 - `LogViewer.xaml.cs` — 系统日志面板
-- `SessionToolsServer.cs` — 3090 API 处理器
+- `SessionToolsServer.cs` — 3090 API 处理器（health / info / restart / open / reveal / dom）
 - `CrashRecovery.cs` / `CircuitBreaker.cs` — 故障隔离
 - `DshServiceManager.cs` — DSH 服务进程管理
 - `SkinWatcher.cs` — 皮肤热加载
@@ -43,14 +43,13 @@ DSH 将 DeepSeek AI 的 Web GUI 封装为完整的桌面体验 —— 系统托�
 
 #### 💙 旧版外壳
 
-`desktop/main.js` — 完整桌面实现，包含托盘、自启、崩溃恢复、安全模式隔离、会话备份/恢复（通过 3090 HTTP 桥接）。
+`desktop/main.js` — 完整桌面实现，包含托盘、自启、崩溃恢复、安全模式隔离。
 
 | 功能 | 状态 |
 |---|---|
 | 自动服务启动/停止 | ✅ |
 | 托盘菜单（重启、自启、安全模式） | ✅ |
 | 崩溃自恢复（~2s 重启） | ✅ |
-| 会话备份与回滚 | ✅ |
 | 皮肤支持 | ✅ |
 | 峰谷计费倒计时 | ✅ |
 | 一键更新检查 | ✅ |
@@ -64,7 +63,6 @@ DSH 将 DeepSeek AI 的 Web GUI 封装为完整的桌面体验 —— 系统托�
 | `${b}dsh-memory${b}` | 长期记忆 | 分类分组、BM25 去重、图片 OCR |
 | `${b}dsh-persona-manager${b}` | 角色管理 | 多角色创建、Toast 提示、持久化 |
 | `${b}dsh-prompt-enhancer${b}` | 提示词增强 | 3 种模式、自定义模型、连通性测试 |
-| `${b}dsh-session-tools${b}` | 会话工具 | 备份、回滚、恢复 |
 | `${b}dsh-skin-switch${b}` | 皮肤切换器 | 设置一级标签页、GitHub 仓库链接、支持鲸鱼娘昼夜皮肤 |
 | `${b}deepseek-balance${b}` | 余额监控 | 用量统计、柱状图、实时更新 |
 
@@ -128,7 +126,6 @@ deepseek_harness/
 +   +- dsh-memory/
 +   +- dsh-persona-manager/
 +   +- dsh-prompt-enhancer/
-+   +- dsh-session-tools/
 +   +- dsh-skin-switch/
 +   +- deepseek-balance/
 +-- README.md
@@ -162,9 +159,6 @@ deepseek_harness/
 | `${b}/health?probe=liveness${b}` | GET | 存活探针 — ping 3080 |
 | `${b}/health?probe=readiness${b}` | GET | 就绪探针 — 状态 + 安全模式 |
 | `${b}/health?probe=metrics${b}` | GET | 内存/运行时间/崩溃次数 |
-| `${b}/backup${b}` | GET | 备份当前会话 |
-| `${b}/restore${b}` | GET | 恢复会话 + 刷新页面 |
-| `${b}/rollback${b}` | GET | 回滚到上次备份 |
 | `${b}/restart${b}` | GET | 重启 DSH 服务（频率限制） |
 | `${b}/open?path=${b}` | GET | 打开文件 |
 | `${b}/reveal?path=${b}` | GET | 在资源管理器中显示 |
