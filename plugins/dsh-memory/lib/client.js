@@ -10,12 +10,19 @@ window.__ModuleLoader__.load({
 
     var API = '/api/memories';
 
+    // 分类色改用官方 static 色板令牌（原为写死的 hex）。
+    // 注意两点：
+    //  1. 官方色板没有紫色系，event 只能用唯一的 violet 令牌 --dsh-file-type-violet，
+    //     并保留原 #7c5cfc 作为回退；若该令牌未定义则外观与改动前完全一致。
+    //  2. 底色/描边原先用 cat.color + '22' / + '44' 做十六进制拼接，
+    //     这使 cat.color 无法是 var()（会拼出非法 CSS）。已改写为 color-mix()，
+    //     百分比取自原 alpha：0x22 ≈ 13%、0x44 ≈ 27%。
     var CATEGORIES = {
-      preference: { icon: '\u2B50', label: '\u504F\u597D', color: '#f0c040' },
-      fact:       { icon: '\u2139\uFE0F', label: '\u4FE1\u606F', color: '#4d6bfe' },
-      event:      { icon: '\uD83D\uDCC5', label: '\u4E8B\u4EF6', color: '#7c5cfc' },
-      rule:       { icon: '\uD83D\uDEE1\uFE0F', label: '\u89C4\u5219', color: '#34a853' },
-      context:    { icon: '\uD83D\uDD0D', label: '\u80CC\u666F', color: '#ea8c00' },
+      preference: { icon: '\u2B50', label: '\u504F\u597D', color: 'var(--dsw-static-amber-500, #f0c040)' },
+      fact:       { icon: '\u2139\uFE0F', label: '\u4FE1\u606F', color: 'var(--dsw-static-blue-500, #4d6bfe)' },
+      event:      { icon: '\uD83D\uDCC5', label: '\u4E8B\u4EF6', color: 'var(--dsh-file-type-violet, #7c5cfc)' },
+      rule:       { icon: '\uD83D\uDEE1\uFE0F', label: '\u89C4\u5219', color: 'var(--dsw-static-green-500, #34a853)' },
+      context:    { icon: '\uD83D\uDD0D', label: '\u80CC\u666F', color: 'var(--dsw-static-amber-600, #ea8c00)' },
     };
 
     var STYLE_ID = 'dsh-memory-v2';
@@ -150,7 +157,7 @@ window.__ModuleLoader__.load({
       },
         listItems.map(function (entry) {
           if (entry.type === 'header') {
-            var cat = CATEGORIES[entry.category] || { icon: '?', label: entry.category, color: '#888' };
+            var cat = CATEGORIES[entry.category] || { icon: '?', label: entry.category, color: 'var(--dsw-alias-label-tertiary, #888)' };
             return React.createElement('div', { key: 'h-' + entry.category, className: 'mmv2-group-header' },
               React.createElement('span', { className: 'mmv2-group-dot', style: { backgroundColor: cat.color } }),
               cat.icon + ' ' + cat.label,
@@ -171,7 +178,7 @@ window.__ModuleLoader__.load({
     function MemoryCard(props) {
       var m = props.m, active = props.active, onClick = props.onClick;
       var memId = props['data-memory-id'];
-      var cat = CATEGORIES[m.category] || { icon: '?', label: m.category, color: '#888' };
+      var cat = CATEGORIES[m.category] || { icon: '?', label: m.category, color: 'var(--dsw-alias-label-tertiary, #888)' };
       var preview = m.content.length > 100 ? m.content.slice(0, 100) + '...' : m.content;
       return React.createElement('div', {
         className: 'mmv2-card' + (active ? ' mmv2-card-active' : ''),
@@ -181,7 +188,7 @@ window.__ModuleLoader__.load({
         React.createElement('div', { className: 'mmv2-card-top' },
           React.createElement('span', {
             className: 'mmv2-card-badge',
-            style: { backgroundColor: cat.color + '22', color: cat.color, border: '1px solid ' + cat.color + '44' }
+            style: { backgroundColor: 'color-mix(in srgb, ' + cat.color + ' 13%, transparent)', color: cat.color, border: '1px solid color-mix(in srgb, ' + cat.color + ' 27%, transparent)' }
           }, cat.icon + ' ' + cat.label),
           React.createElement('span', { className: 'mmv2-card-imp' }, '\u2B50' + (m.importance || 5))),
         React.createElement('div', { className: 'mmv2-card-text' }, preview),
