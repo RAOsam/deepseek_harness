@@ -30,7 +30,7 @@ function stateFile() {
   return join(dshHome(), 'deepseek-balance.json');
 }
 
-const DEFAULT_STATE = { config: { enabled: true, refreshSec: 60 }, snapshots: [] };
+const DEFAULT_STATE = { config: { enabled: true, refreshSec: 60, popPos: null }, snapshots: [] };
 
 async function readState() {
   try {
@@ -190,7 +190,9 @@ function apply(ctx) {
         topUpUrl: TOP_UP_URL,
       });
     }
-    return send(res, 200, { ok: true, balance: result.balance, stats: await statsOf(), topUpUrl: TOP_UP_URL });
+    // 一次 readState 同时取 stats 与 config（避免重复读 1.8MB 状态文件）
+    const state = await readState();
+    return send(res, 200, { ok: true, balance: result.balance, stats: computeStats(state.snapshots), config: state.config, topUpUrl: TOP_UP_URL });
   });
 
   register('/dsb/api/state', async (req, res) => {
@@ -222,6 +224,13 @@ function apply(ctx) {
     if (typeof patch.enabled === 'boolean') next.enabled = patch.enabled;
     if (typeof patch.refreshSec === 'number' && patch.refreshSec >= 10 && patch.refreshSec <= 3600) {
       next.refreshSec = Math.round(patch.refreshSec);
+    }
+    // 余额弹窗拖动位置；null 表示恢复自动定位
+    if (patch.popPos === null) {
+      next.popPos = null;
+    } else if (patch.popPos && typeof patch.popPos === "object"
+      && Number.isFinite(patch.popPos.left) && Number.isFinite(patch.popPos.top)) {
+      next.popPos = { left: Math.round(patch.popPos.left), top: Math.round(patch.popPos.top) };
     }
     state.config = next;
     await writeState(state, logger);

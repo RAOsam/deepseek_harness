@@ -161,6 +161,7 @@ window.__ModuleLoader__.load({
 				// 钳制在视口内，避免拖出屏幕后无法再抓回来
 				const left = Math.min(Math.max(0, d.left + (e.clientX - d.x)), Math.max(0, window.innerWidth - w));
 				const top = Math.min(Math.max(0, d.top + (e.clientY - d.y)), Math.max(0, window.innerHeight - h));
+				d.last = { left, top };
 				setPos({ left, top });
 			};
 			const onDragUp = (e) => {
@@ -169,7 +170,28 @@ window.__ModuleLoader__.load({
 				dragRef.current = null;
 				setDragging(false);
 				try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* 忽略 */ }
+				// 仅在拖动结束时落盘：中途位置不写，避免反复写 1.8MB 状态文件
+				if (d.last) {
+					fetch("/dsb/api/config", {
+						method: "POST",
+						cache: "no-store",
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify({ popPos: d.last }),
+					}).catch(() => { /* 保存失败只影响下次打开的位置 */ });
+				}
 			};
+
+			// 首次拿到服务端配置时恢复已保存的弹窗位置；之后不再覆盖（避免每 60s 轮询把拖动结果重置）
+			const posInitRef = React.useRef(false);
+			React.useEffect(() => {
+				if (posInitRef.current) return;
+				const cfg = view && view.config;
+				if (!cfg) return;
+				posInitRef.current = true;
+				if (cfg.popPos && Number.isFinite(cfg.popPos.left) && Number.isFinite(cfg.popPos.top)) {
+					setPos({ left: cfg.popPos.left, top: cfg.popPos.top });
+				}
+			}, [view]);
 
 			const load = React.useCallback(async (mode) => {
 				setLoading(true);
