@@ -65,9 +65,12 @@ window.__ModuleLoader__.load({
         '.pv2-footer{display:flex;gap:6px;padding:8px 14px;border-top:1px solid var(--dsw-alias-border-l1,#333)}',
         '.pv2-footer-btn{display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:4px;border:1px solid var(--dsw-alias-border-l2,#444);background:transparent;color:var(--dsw-alias-label-tertiary,#888);font-size:11px;cursor:pointer;transition:all .15s}',
         '.pv2-footer-btn:hover{background:rgba(164,183,229,.08);color:var(--dsw-alias-label-secondary,#aaa)}',
-        '.pv2-sw{position:relative;display:inline-block}',
-        '.pv2-sw-btn{display:flex;align-items:center;gap:4px;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:12px;color:var(--dsw-alias-label-secondary,#999)}',
+        '.pv2-sw{position:relative;display:inline-flex;min-width:0}',
+        '.pv2-sw-btn{display:flex;align-items:center;gap:4px;min-width:0;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:12px;color:var(--dsw-alias-label-secondary,#999)}',
         '.pv2-sw-btn:hover{background:rgba(164,183,229,.12);color:var(--dsw-alias-label-primary,#eee)}',
+        '.pv2-sw-icon{flex:none}',
+        '.pv2-sw-name{min-width:0;max-width:9em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+        '.pv2-sw-caret{flex:none}',
         '.pv2-sw-drop{position:absolute;right:0;top:100%;margin-top:4px;min-width:200px;background:var(--dsw-alias-bg-layer-2,#1c1c1e);border:1px solid var(--dsw-alias-border-l2,#444);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.35);z-index:100;padding:4px}',
         '.pv2-sw-card{display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;font-size:12px;color:var(--dsw-alias-label-primary,#eee);border-radius:6px;transition:all .12s}',
         '.pv2-sw-card:hover{background:rgba(164,183,229,.1)}',
@@ -256,8 +259,15 @@ window.__ModuleLoader__.load({
         });
       };
 
-      var buttonEl = React.createElement('div', { className: 'pv2-sw-btn', onClick: function () { setOpen(!open); }, title: '\u5207\u6362\u4EBA\u8BBE' },
-        active ? getIcon(active.name) + ' ' + active.name + ' \u25BE' : '\u4EBA\u8BBE \u25BE');
+      var pname = active ? active.name : '\u4EBA\u8BBE';
+      var buttonEl = React.createElement('div', {
+        className: 'pv2-sw-btn',
+        onClick: function () { setOpen(!open); },
+        title: '\u5207\u6362\u4EBA\u8BBE\uFF1A' + pname,
+      },
+        React.createElement('span', { className: 'pv2-sw-icon' }, getIcon(active ? active.name : '')),
+        React.createElement('span', { className: 'pv2-sw-name' }, pname),
+        React.createElement('span', { className: 'pv2-sw-caret' }, '\u25BE'));
 
       var dropEl = open && personas.length > 0
         ? React.createElement('div', { className: 'pv2-sw-drop' },
