@@ -43,7 +43,9 @@ window.__ModuleLoader__.load({
 	box-shadow: var(--dsw-shadow-lv3, 0 8px 28px rgba(0,0,0,.28));
 	font-size: 12px; line-height: 1.5;
 }
-.dsb-pop-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px 8px; font-weight: 700; }
+.dsb-pop-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px 8px; font-weight: 700; cursor: move; user-select: none; touch-action: none; }
+.dsb-pop.dsb-dragging .dsb-pop-head { cursor: grabbing; }
+.dsb-pop.dsb-dragging { user-select: none; }
 .dsb-pop-close { border: none; background: transparent; color: inherit; cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: var(--dsw-radius-xs, 6px); }
 .dsb-pop-close:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .dsb-pop-body { padding: 4px 12px 12px; }
@@ -135,6 +137,39 @@ window.__ModuleLoader__.load({
 			const [open, setOpen] = React.useState(false);
 			const triggerRef = React.useRef(null);
 			const popRef = React.useRef(null);
+			// 弹窗位置：null = 按触发器自动定位；拖动后固定为 { left, top }
+			const [pos, setPos] = React.useState(null);
+			const [dragging, setDragging] = React.useState(false);
+			const dragRef = React.useRef(null);
+
+			const onDragDown = (e) => {
+				const pop = popRef.current;
+				if (!pop) return;
+				if (e.target && e.target.closest && e.target.closest(".dsb-pop-close")) return;
+				const r = pop.getBoundingClientRect();
+				dragRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY, left: r.left, top: r.top };
+				setDragging(true);
+				try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* 忽略 */ }
+				e.preventDefault();
+			};
+			const onDragMove = (e) => {
+				const d = dragRef.current;
+				if (!d || d.id !== e.pointerId) return;
+				const pop = popRef.current;
+				if (!pop) return;
+				const w = pop.offsetWidth, h = pop.offsetHeight;
+				// 钳制在视口内，避免拖出屏幕后无法再抓回来
+				const left = Math.min(Math.max(0, d.left + (e.clientX - d.x)), Math.max(0, window.innerWidth - w));
+				const top = Math.min(Math.max(0, d.top + (e.clientY - d.y)), Math.max(0, window.innerHeight - h));
+				setPos({ left, top });
+			};
+			const onDragUp = (e) => {
+				const d = dragRef.current;
+				if (!d || d.id !== e.pointerId) return;
+				dragRef.current = null;
+				setDragging(false);
+				try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* 忽略 */ }
+			};
 
 			const load = React.useCallback(async (mode) => {
 				setLoading(true);
@@ -201,12 +236,21 @@ window.__ModuleLoader__.load({
 			let pop = null;
 			if (open) {
 				const rect = triggerRef.current ? triggerRef.current.getBoundingClientRect() : null;
-				const style = rect
-					? { left: Math.max(8, Math.min(rect.left, window.innerWidth - 308)), top: Math.max(8, rect.top - 344), width: 300 }
-					: { left: 8, bottom: 8, width: 300 };
+				const style = pos
+					? { left: pos.left, top: pos.top, width: 300 }
+					: rect
+						? { left: Math.max(8, Math.min(rect.left, window.innerWidth - 308)), top: Math.max(8, rect.top - 344), width: 300 }
+						: { left: 8, bottom: 8, width: 300 };
 				const head = React.createElement(
 					"div",
-					{ className: "dsb-pop-head" },
+					{
+						className: "dsb-pop-head",
+						title: "按住拖动可移动",
+						onPointerDown: onDragDown,
+						onPointerMove: onDragMove,
+						onPointerUp: onDragUp,
+						onPointerCancel: onDragUp,
+					},
 					React.createElement("span", null, "DeepSeek 余额"),
 					React.createElement("button", { type: "button", className: "dsb-pop-close", "aria-label": "关闭", onClick: () => setOpen(false) }, "✕")
 				);
@@ -298,7 +342,7 @@ window.__ModuleLoader__.load({
 				const note = React.createElement("div", { className: "dsb-note" },
 					"数据来自 DeepSeek 官方余额接口，约每分钟自动刷新；点击「充值」前往官方充值页。");
 				pop = ReactDOM.createPortal(
-					React.createElement("div", { ref: popRef, className: "dsb-pop", style, role: "dialog", "aria-label": "DeepSeek 余额详情" },
+					React.createElement("div", { ref: popRef, className: "dsb-pop" + (dragging ? " dsb-dragging" : ""), style, role: "dialog", "aria-label": "DeepSeek 余额详情" },
 						head, React.createElement("div", { className: "dsb-pop-body" }, body, note)),
 					document.body
 				);
