@@ -217,17 +217,9 @@ window.__ModuleLoader__.load({
 				return () => clearInterval(timer);
 			}, [load, refreshMs]);
 
-			// 点击外部关闭弹层
-			React.useEffect(() => {
-				if (!open) return;
-				const onDown = (e) => {
-					if (popRef.current && popRef.current.contains(e.target)) return;
-					if (triggerRef.current && triggerRef.current.contains(e.target)) return;
-					setOpen(false);
-				};
-				document.addEventListener("pointerdown", onDown);
-				return () => document.removeEventListener("pointerdown", onDown);
-			}, [open]);
+			// 本弹层是可拖动的常驻浮窗，点击外部不关闭：
+			// 拖动后的位置会持久化，若点外部就收起，用户会误以为位置没被记住。
+			// 关闭方式：点标题栏的 ✕，或再次点击侧边栏的余额按钮（触发器本身是开关）。
 
 			const balance = view && view.ok && view.balance ? view.balance : null;
 			const stats = view && view.stats ? view.stats : null;
@@ -362,7 +354,7 @@ window.__ModuleLoader__.load({
 					);
 				}
 				const note = React.createElement("div", { className: "dsb-note" },
-					"数据来自 DeepSeek 官方余额接口，约每分钟自动刷新；点击「充值」前往官方充值页。");
+					"数据来自 DeepSeek 官方余额接口，约每分钟自动刷新。拖动标题行可移动，点 ✕ 或再次点击侧边栏余额按钮关闭。");
 				pop = ReactDOM.createPortal(
 					React.createElement("div", { ref: popRef, className: "dsb-pop" + (dragging ? " dsb-dragging" : ""), style, role: "dialog", "aria-label": "DeepSeek 余额详情" },
 						head, React.createElement("div", { className: "dsb-pop-body" }, body, note)),
